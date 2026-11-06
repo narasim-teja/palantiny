@@ -19,8 +19,15 @@ export type FindMyState = "separated" | "near-owner" | null;
 
 export type Severity = "high" | "medium" | "note";
 
-/** Whether this identity can be recognised again later, at another place. */
-export type Stability = "stable" | "rotating" | "new";
+/**
+ * Whether this identity can be recognised again later, at another place.
+ * stable    one fixed identity
+ * named     rotates, but keeps a serial in its name
+ * keyed     separated Find My device, whose key lasts up to a day
+ * rotating  changes identity, so it's lost between places
+ * new       too soon to tell
+ */
+export type Stability = "stable" | "named" | "keyed" | "rotating" | "new";
 
 export interface SensorStatus {
   sensor: "live" | "stale" | "offline";
@@ -43,6 +50,7 @@ export interface PlaceView {
 
 export interface DevicePresence {
   placeId: number;
+  firstSeen: number;
   minutes: number;
   bestRssi: number;
   lastSeen: number;
@@ -65,6 +73,10 @@ export interface DeviceView {
   stability: Stability;
   trusted: boolean;
   watched: boolean;
+  /** When you started watching. Places first seen after this count as new. */
+  watchedAt: number | null;
+  /** Set while a watched device has just come back from a long absence. */
+  back: { after: number; at: number } | null;
   paired: boolean;
   firstSeen: number;
   lastSeen: number;

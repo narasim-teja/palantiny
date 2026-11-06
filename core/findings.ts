@@ -13,6 +13,11 @@ function placesCounted(device: DeviceView): number[] {
   return device.presence.filter((p) => p.minutes >= MIN_MINUTES_AT_PLACE).map((p) => p.placeId);
 }
 
+function absence(minutes: number): string {
+  const hours = Math.round(minutes / 60);
+  return hours === 1 ? "an hour" : `${hours} hours`;
+}
+
 function lingered(device: DeviceView): boolean {
   return device.presence.some((p) => p.minutes >= LINGER_MINUTES);
 }
@@ -24,6 +29,41 @@ export function deriveFindings(devices: DeviceView[]): Finding[] {
     if (device.owner?.self || device.trusted) continue;
 
     const placeIds = placesCounted(device);
+    const name = device.label ?? device.code;
+
+    if (device.watched) {
+      const base = {
+        deviceId: device.id,
+        deviceCode: device.code,
+        confidence: device.identityConfidence,
+        observed: device.identityConfidence >= 1,
+      };
+      const arrivals = device.presence.filter(
+        (p) => p.minutes >= MIN_MINUTES_AT_PLACE && device.watchedAt !== null && p.firstSeen >= device.watchedAt,
+      );
+      for (const place of arrivals) {
+        findings.push({
+          ...base,
+          id: `watch-place-${device.id}-${place.placeId}`,
+          // Someone you know turning up is worth seeing. A stranger doing it is the whole point.
+          severity: device.owner ? "medium" : "high",
+          placeIds: [place.placeId],
+          title: `${name} turned up at a new place`,
+          detail: "You're watching this device, and it wasn't at this place when you started.",
+        });
+      }
+      if (device.back) {
+        findings.push({
+          ...base,
+          id: `watch-back-${device.id}-${device.back.at}`,
+          severity: "note",
+          placeIds,
+          title: `${name} is back after ${absence(device.back.after)}`,
+          detail: "Counted only while this Mac was listening, so sleep doesn't make it look longer.",
+        });
+      }
+      if (arrivals.length > 0) continue;
+    }
 
     // You told us whose this is, so it isn't a mystery. It's still worth a mention.
     if (device.owner) {
