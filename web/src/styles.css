@@ -56,6 +56,7 @@
   --topbar: 52px;
   --rail: 304px;
   --inspector: 368px;
+  --list-search: 44px;
   color-scheme: light;
 }
 
@@ -211,7 +212,9 @@ kbd {
 
 /* Findings */
 
-.findings { flex: none; max-height: 42%; overflow-y: auto; }
+.findings { flex: none; max-height: 34%; overflow-y: auto; }
+.known { flex: none; max-height: 34%; display: flex; flex-direction: column; padding-bottom: var(--space-2); }
+.known ul { min-height: 0; overflow-y: auto; margin-inline: calc(var(--space-4) * -1); padding-inline: 8px; }
 .finding-list { display: flex; flex-direction: column; gap: var(--space-2); }
 .finding { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px var(--space-2); }
 .finding[data-severity="high"] { margin-inline: -8px; padding: var(--space-2); background: var(--alert-wash); border-radius: var(--radius); }
@@ -414,7 +417,19 @@ kbd {
 .list-wrap { position: absolute; inset: 0; overflow: auto; background: var(--surface); }
 .list-wrap[data-inspector="true"] { right: var(--inspector); }
 table { width: 100%; border-collapse: collapse; }
-th { position: sticky; top: 0; background: var(--surface); text-align: left; font-weight: 500; color: var(--ink-2); z-index: 1; box-shadow: inset 0 -1px 0 var(--rule); }
+.list-search {
+  position: sticky; top: 0; left: 0; z-index: 2; display: flex; align-items: center; gap: var(--space-2);
+  height: var(--list-search); padding-inline: var(--space-3); color: var(--ink-2);
+  background: var(--surface); box-shadow: inset 0 -1px 0 var(--rule);
+}
+.list-search svg { flex: none; }
+.list-search input { flex: 1; min-width: 0; height: 100%; background: none; border: 0; outline: none; color: var(--ink); appearance: none; }
+.list-search input::placeholder { color: var(--ink-3); }
+.list-search input::-webkit-search-cancel-button { display: none; }
+.list-search:focus-within { box-shadow: inset 0 -2px 0 var(--ink); }
+.list-count { flex: none; color: var(--ink-3); font-size: var(--text-xs); }
+.list-empty { padding: var(--space-5) var(--space-4); color: var(--ink-2); }
+th { position: sticky; top: var(--list-search); background: var(--surface); white-space: nowrap; text-align: left; font-weight: 500; color: var(--ink-2); z-index: 1; box-shadow: inset 0 -1px 0 var(--rule); }
 th button { width: 100%; display: flex; gap: 4px; padding: var(--space-2) var(--space-3); background: none; border: 0; cursor: pointer; font-weight: 500; color: inherit; }
 th button:hover { color: var(--ink); }
 .th-plain { display: block; padding: var(--space-2) var(--space-3); }

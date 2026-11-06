@@ -2,6 +2,7 @@ import { AnimatePresence, MotionConfig } from "motion/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Arrivals } from "./Arrivals";
 import { DeviceTable } from "./DeviceTable";
+import { Known } from "./Known";
 import { Findings } from "./Findings";
 import { Inspector } from "./Inspector";
 import { FilmCaption, GraphKey, Ledger } from "./Overlays";
@@ -9,6 +10,7 @@ import { Places } from "./Places";
 import { Setup } from "./Setup";
 import { Timeline } from "./Timeline";
 import { useDeviceDetail } from "@/hooks/useDeviceDetail";
+import { useDeviceSearch } from "@/hooks/useDeviceSearch";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSnapshot } from "@/hooks/useSnapshot";
 import type { ActionRequest } from "@core/types";
@@ -55,6 +57,8 @@ export function Console() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [webgl, setWebgl] = useState(true);
   const [version, setVersion] = useState(0);
+  const [query, setQuery] = useState("");
+  const [searchFocus, setSearchFocus] = useState(0);
   const { snapshot, connected, act: dispatch } = useSnapshot(reveal);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const wide = !useMediaQuery(STACKED_QUERY);
@@ -73,6 +77,12 @@ export function Console() {
         setSelectedId(null);
         setFilm(false);
       }
+      if (event.key === "/") {
+        event.preventDefault();
+        setFilm(false);
+        setView("list");
+        setSearchFocus((current) => current + 1);
+      }
       if (event.key === "g" && webgl) setView("graph");
       if (event.key === "l") setView("list");
       if (event.key === "f" && webgl) {
@@ -85,7 +95,10 @@ export function Console() {
   }, [webgl]);
 
   const places = useMemo(() => (snapshot ? visiblePlaces(snapshot.places) : []), [snapshot]);
-  const device = snapshot?.devices.find((candidate) => candidate.id === selectedId) ?? null;
+  const search = useDeviceSearch(query, reveal, version);
+  // A search can reach devices the snapshot doesn't carry.
+  const device =
+    (snapshot?.devices ?? []).concat(search.devices).find((candidate) => candidate.id === selectedId) ?? null;
   const finding = snapshot && device ? findingFor(snapshot.findings, device.id) : undefined;
   const detail = useDeviceDetail(selectedId, (device?.lastSeen ?? 0) + version);
 
@@ -106,6 +119,12 @@ export function Console() {
   const state = !connected ? "offline" : (snapshot?.status.sensor ?? "stale");
   const here = places.find((place) => place.current);
   const inRange = snapshot?.devices.filter((candidate) => candidate.live).length ?? 0;
+
+  // Anything that needs you goes above everything else, whatever you've named.
+  const urgent = snapshot?.findings.some((candidate) => candidate.severity !== "note") ?? false;
+  const findings = snapshot && (
+    <Findings findings={snapshot.findings} places={snapshot.places} devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} />
+  );
 
   return (
     <MotionConfig reducedMotion="user">
@@ -154,7 +173,9 @@ export function Console() {
         <nav className="left" aria-label="Findings and places">
           {snapshot ? (
             <>
-              <Findings findings={snapshot.findings} places={snapshot.places} devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} />
+              {urgent && findings}
+              <Known devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} now={snapshot.generatedAt} />
+              {!urgent && findings}
               <Places places={snapshot.places} inRange={inRange} now={snapshot.generatedAt} onRename={rename} />
               <Arrivals devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} now={snapshot.generatedAt} />
             </>
@@ -183,11 +204,17 @@ export function Console() {
           )}
           {snapshot && places.length > 0 && view === "list" && (
             <DeviceTable
-              devices={snapshot.devices}
+              devices={query.trim() ? search.devices : snapshot.devices}
               findings={snapshot.findings}
               selectedId={selectedId}
               onSelect={setSelectedId}
               now={snapshot.generatedAt}
+              query={query}
+              onQuery={setQuery}
+              total={query.trim() ? search.total : null}
+              searching={search.searching}
+              reveal={reveal}
+              focusKey={searchFocus}
             />
           )}
           {snapshot && places.length > 0 && view === "graph" && <Ledger totals={snapshot.totals} />}

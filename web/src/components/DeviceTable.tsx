@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ShapeIcon } from "./ShapeIcon";
 import type { DeviceView, Finding } from "@core/types";
 import { ago, deviceTitle, findingFor, shapeFor, STABILITY } from "@/lib/view";
@@ -11,6 +12,14 @@ interface Props {
   selectedId: number | null;
   onSelect: (id: number) => void;
   now: number;
+  query: string;
+  onQuery: (query: string) => void;
+  /** Every match on the server, or null when not searching. */
+  total: number | null;
+  searching: boolean;
+  reveal: boolean;
+  /** Changes when something asks for the search box to take focus. */
+  focusKey: number;
 }
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
@@ -27,7 +36,13 @@ function value(device: DeviceView, key: SortKey): number | string {
   return device.code;
 }
 
-export function DeviceTable({ devices, findings, selectedId, onSelect, now }: Props) {
+export function DeviceTable({ devices, findings, selectedId, onSelect, now, query, onQuery, total, searching, reveal, focusKey }: Props) {
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focusKey > 0) input.current?.select();
+  }, [focusKey]);
+
   const inspecting = devices.some((device) => device.id === selectedId);
   const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: "places", descending: true });
 
@@ -43,6 +58,40 @@ export function DeviceTable({ devices, findings, selectedId, onSelect, now }: Pr
 
   return (
     <div className="list-wrap" data-inspector={inspecting}>
+      <div className="list-search" role="search">
+        <Search size={15} strokeWidth={2} aria-hidden="true" />
+        <input
+          ref={input}
+          type="search"
+          value={query}
+          aria-label="Search devices"
+          placeholder={reveal ? "Search names, people, callsigns and types" : "Search callsigns and types"}
+          onChange={(event) => onQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              onQuery("");
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        {total !== null && (
+          <span className="list-count" role="status">
+            {searching ? "Searching" : total > rows.length ? `First ${rows.length} of ${total.toLocaleString()}` : `${total.toLocaleString()} found`}
+          </span>
+        )}
+        {query ? (
+          <button className="icon-btn" aria-label="Clear search" onClick={() => onQuery("")}>
+            <X size={14} strokeWidth={2} aria-hidden="true" />
+          </button>
+        ) : (
+          <kbd aria-hidden="true">/</kbd>
+        )}
+      </div>
+      {total === 0 && !searching ? (
+        <p className="list-empty">
+          Nothing matches "{query.trim()}".{!reveal && " Names aren't searchable in Screenshot mode."}
+        </p>
+      ) : (
       <table>
         <caption className="sr-only">Devices heard near this Mac</caption>
         <thead>
@@ -100,6 +149,7 @@ export function DeviceTable({ devices, findings, selectedId, onSelect, now }: Pr
           })}
         </tbody>
       </table>
+      )}
     </div>
   );
 }

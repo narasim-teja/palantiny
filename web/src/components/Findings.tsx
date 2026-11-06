@@ -63,7 +63,9 @@ export function Findings({ findings, places, devices, selectedId, onSelect }: Pr
               const placeIds = [...new Set(entry.members.flatMap((member) => member.placeIds))];
               // What's here now comes first, because that's what you can still go and look for.
               const members = [...entry.members].sort((a, b) => inRange(b) - inRange(a));
-              const shown = expanded.has(entry.key) ? members : members.slice(0, VISIBLE_DEVICES);
+              // Notes stay folded, because a busy building would otherwise fill the rail.
+              const limit = entry.severity === "note" ? 0 : VISIBLE_DEVICES;
+              const shown = expanded.has(entry.key) ? members : members.slice(0, limit);
               const hidden = members.length - shown.length;
               return (
                 <motion.li
@@ -91,7 +93,7 @@ export function Findings({ findings, places, devices, selectedId, onSelect }: Pr
                     ))}
                     {hidden > 0 && (
                       <button className="chip chip-more" onClick={() => expand(entry.key)}>
-                        {hidden} more
+                        {shown.length === 0 ? `Show ${hidden}` : `${hidden} more`}
                       </button>
                     )}
                   </div>
