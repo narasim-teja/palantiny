@@ -1,35 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
-import { mergeClass, parseAdvert } from "../lib/classify";
-import { getMeta, setMeta } from "../lib/db";
-import { inferLink, HANDOVER_WINDOW_MS, type AliasFacts } from "../lib/inference";
-import { decidePlace, placeCode, type PlaceFingerprint } from "../lib/places";
-import type { DeviceClass } from "../lib/types";
-
-export interface BleEvent {
-  t: "ble";
-  ts: number;
-  id: string;
-  rssi: number;
-  name?: string;
-  mfr?: string;
-  svc?: string[];
-}
-
-export interface WifiNet {
-  ssid?: string;
-  bssid?: string;
-  rssi: number;
-  secured: boolean;
-  channel?: number;
-  band?: number;
-}
-
-export interface WifiEvent {
-  t: "wifi";
-  ts: number;
-  nets: WifiNet[];
-}
+import { mergeClass, parseAdvert } from "@core/classify";
+import type { BleEvent, WifiEvent } from "@core/events";
+import { getMeta, setMeta } from "./db";
+import { inferLink, HANDOVER_WINDOW_MS, type AliasFacts } from "@core/inference";
+import { decidePlace, placeCode, type PlaceFingerprint } from "@core/places";
+import type { DeviceClass } from "@core/types";
 
 const RETENTION_MS = 30 * 24 * 3_600_000;
 const BANDS: Record<number, string> = { 1: "2.4 GHz", 2: "5 GHz", 3: "6 GHz" };
@@ -46,7 +22,7 @@ export class Ingest {
       setMeta(db, "salt", salt);
     }
     this.salt = salt;
-    // Start unplaced: the Mac may have moved while the collector was off.
+    // Start unplaced: the Mac may have moved while the server was off.
     this.placeId = null;
     setMeta(db, "current_place", "0");
   }

@@ -106,14 +106,6 @@ export function openDb(path = dbPath()): Database {
   return db;
 }
 
-let shared: Database | null = null;
-
-/** One connection per server process. The collector is the main writer. */
-export function sharedDb(): Database {
-  shared ??= openDb();
-  return shared;
-}
-
 export function getMeta(db: Database, key: string): string | null {
   const row = db.query("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | null;
   return row?.value ?? null;

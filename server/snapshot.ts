@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { classLabel } from "./classify";
+import { classLabel } from "@core/classify";
 import { getMeta } from "./db";
-import { deriveFindings } from "./findings";
+import { deriveFindings } from "@core/findings";
 import type {
   DeviceClass,
   DeviceDetail,
@@ -12,7 +12,7 @@ import type {
   SensorStatus,
   Snapshot,
   Visit,
-} from "./types";
+} from "@core/types";
 
 const LIVE_WINDOW_MS = 90_000;
 const STALE_AFTER_MS = 20_000;
@@ -43,10 +43,10 @@ interface DeviceRow {
 function readStatus(db: Database, now: number): SensorStatus {
   const heartbeat = Number(getMeta(db, "heartbeat") ?? 0);
   const age = now - heartbeat;
-  const collector =
+  const sensor =
     heartbeat === 0 || age > OFFLINE_AFTER_MS ? "offline" : age > STALE_AFTER_MS ? "stale" : "live";
   return {
-    collector,
+    sensor,
     bluetooth: getMeta(db, "status.bluetooth") ?? "unknown",
     location: getMeta(db, "status.location") ?? "unknown",
     wifi: getMeta(db, "status.wifi") ?? "unknown",

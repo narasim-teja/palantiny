@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { ActionRequest } from "./types";
+import type { ActionRequest } from "@core/types";
 
 const MAX_LABEL = 40;
 
