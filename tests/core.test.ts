@@ -7,7 +7,7 @@ import { inferLink, type AliasFacts } from "../core/inference";
 import { decidePlace, placeCode } from "../core/places";
 import { buildSnapshot } from "../server/snapshot";
 import type { DeviceView, Finding } from "../core/types";
-import { filmCaption } from "../web/src/lib/view";
+import { filmCaption, placeSummary } from "../web/src/lib/view";
 import { Ingest } from "../server/ingest";
 
 const LONG = `4c0012 19 10${"ab".repeat(22)}0100`.replace(/ /g, "");
@@ -152,7 +152,7 @@ describe("findings", () => {
   });
 
   test("a tag at one place is a note, not an alarm", () => {
-    const [only] = deriveFindings([device({ class: "tag", findMy: "separated", presence: at(1) })]);
+    const [only] = deriveFindings([device({ class: "tag", findMy: "separated", live: true, presence: at(1) })]);
     expect(only?.severity).toBe("note");
     expect(only?.detail).toContain("not evidence");
   });
@@ -299,5 +299,43 @@ describe("console copy", () => {
     expect(filmCaption(place, [], [tag, tag])[1]).toBe("2 Find My devices separated from their owners.");
     expect(filmCaption(place, [urgent], [tag])[1]).toBe("Tag seen at 2 places.");
     expect(filmCaption(undefined, [urgent], [tag])).toEqual([]);
+  });
+});
+
+describe("separated devices at one place", () => {
+  const tag = (minutes: number, live: boolean) =>
+    ({
+      id: 1,
+      code: "DEV-0001",
+      class: "tag",
+      classLabel: "Find My device, separated from owner",
+      findMy: "separated",
+      owner: null,
+      trusted: false,
+      aliasCount: 1,
+      identityConfidence: 1,
+      live,
+      presence: [{ placeId: 1, minutes, bestRssi: -80, lastSeen: 0 }],
+    }) as unknown as DeviceView;
+
+  test("earn a note while in range", () => {
+    expect(deriveFindings([tag(5, true)])[0]?.severity).toBe("note");
+  });
+
+  test("earn a note if they lingered, even after leaving", () => {
+    expect(deriveFindings([tag(60, false)])[0]?.severity).toBe("note");
+  });
+
+  test("are forgotten if they only passed by", () => {
+    expect(deriveFindings([tag(59, false)])).toEqual([]);
+  });
+});
+
+describe("place summary", () => {
+  const place = { id: 1, code: "PLACE-A", label: null, firstSeen: 0, lastSeen: 0, networkCount: 3, deviceCount: 4901, current: true };
+
+  test("leads with what's in range, never the running total", () => {
+    expect(placeSummary(place, 60)).toBe("60 in range, 3 networks");
+    expect(placeSummary({ ...place, current: false, networkCount: 1 }, 60)).toBe("1 network");
   });
 });
