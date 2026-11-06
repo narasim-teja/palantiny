@@ -3,7 +3,8 @@ import { callsign } from "@core/callsign";
 import { classLabel } from "@core/classify";
 import { getMeta } from "./db";
 import { deriveFindings } from "@core/findings";
-import { recognise } from "@core/recognise";
+import { lastReturn } from "@core/presence";
+import { isDistinctiveName, recognise } from "@core/recognise";
 import type {
   DeviceClass,
   DeviceDetail,
@@ -37,6 +38,7 @@ interface DeviceRow {
   label: string | null;
   trusted: number;
   watched: number;
+  watched_at: number | null;
   paired: number;
   first_seen: number;
   last_seen: number;
@@ -51,7 +53,8 @@ interface DeviceRow {
 
 function stabilityOf(row: DeviceRow): Stability {
   if (row.paired === 1) return "stable";
-  if (row.alias_count > 1) return "rotating";
+  if (row.find_my === "separated") return "keyed";
+  if (row.alias_count > 1) return row.name && isDistinctiveName(row.name) ? "named" : "rotating";
   return (row.longest_alias ?? 0) >= STABLE_AFTER_MS ? "stable" : "new";
 }
 
@@ -75,6 +78,7 @@ function readPresence(db: Database) {
       `SELECT a.device_id AS deviceId, s.place_id AS placeId,
               COUNT(DISTINCT s.minute) AS minutes,
               MAX(s.rssi_max) AS bestRssi,
+              MIN(s.minute) AS firstMinute,
               MAX(s.minute) AS lastMinute
        FROM sightings s JOIN aliases a ON a.id = s.alias_id
        GROUP BY a.device_id, s.place_id`,
@@ -84,6 +88,7 @@ function readPresence(db: Database) {
     placeId: number;
     minutes: number;
     bestRssi: number;
+    firstMinute: number;
     lastMinute: number;
   }[];
   const byDevice = new Map<number, DeviceView["presence"]>();
@@ -91,6 +96,7 @@ function readPresence(db: Database) {
     const list = byDevice.get(row.deviceId) ?? [];
     list.push({
       placeId: row.placeId,
+      firstSeen: row.firstMinute * 60_000,
       minutes: row.minutes,
       bestRssi: row.bestRssi,
       lastSeen: row.lastMinute * 60_000,
@@ -120,6 +126,25 @@ function readVisits(db: Database): Visit[] {
     visits.push({ placeId: open.placeId, start: open.first * 60_000, end: (open.last + 1) * 60_000 });
   }
   return visits;
+}
+
+/** Only watched devices need this, so the cost stays tiny however much data there is. */
+function readReturns(db: Database, deviceIds: number[], now: number) {
+  const returns = new Map<number, DeviceView["back"]>();
+  if (deviceIds.length === 0) return returns;
+  const listening = (
+    db.query("SELECT DISTINCT minute FROM sightings ORDER BY minute").all() as { minute: number }[]
+  ).map((row) => row.minute);
+  const heard = db.query(
+    `SELECT DISTINCT s.minute FROM sightings s JOIN aliases a ON a.id = s.alias_id
+     WHERE a.device_id = ? ORDER BY s.minute`,
+  );
+  for (const id of deviceIds) {
+    const minutes = (heard.all(id) as { minute: number }[]).map((row) => row.minute);
+    const back = lastReturn(minutes, listening, Math.floor(now / 60_000));
+    if (back) returns.set(id, { after: back.after, at: back.at * 60_000 });
+  }
+  return returns;
 }
 
 function relevance(device: DeviceView, flagged: Set<number>, now: number): number {
@@ -152,6 +177,12 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
     )
     .all() as DeviceRow[];
 
+  const returns = readReturns(
+    db,
+    rows.filter((row) => row.watched === 1).map((row) => row.id),
+    now,
+  );
+
   const all: DeviceView[] = rows.map((row) => {
     const self = row.person_self === 1;
     // What a broadcast says it is beats what we could guess from its advert. A separated
@@ -176,6 +207,8 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
       stability: stabilityOf(row),
       trusted: row.trusted === 1,
       watched: row.watched === 1,
+      watchedAt: row.watched_at,
+      back: returns.get(row.id) ?? null,
       paired: row.paired === 1,
       firstSeen: row.first_seen,
       lastSeen: row.last_seen,

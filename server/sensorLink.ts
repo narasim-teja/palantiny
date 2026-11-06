@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseSensorEvent, type SensorEvent } from "@core/events";
+import { startAlerts } from "./alerts";
 import { setMeta } from "./db";
 import { Ingest } from "./ingest";
 import { importPairedDevices } from "./paired";
@@ -114,7 +115,9 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
     setInterval(() => ingest.prune(Date.now()), PRUNE_MS),
   ];
 
+  let stopAlerts = () => {};
   if (mode === "macos") {
+    stopAlerts = startAlerts(db);
     importPairedDevices(db, Date.now())
       .then((count) => console.log(`server: ${count} new paired devices`))
       .catch((error) => console.error("server: paired device import failed", error));
@@ -127,6 +130,7 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
 
   return () => {
     for (const timer of timers) clearInterval(timer);
+    stopAlerts();
     setMeta(db, "heartbeat", "0");
     // The macOS sensor exits when this socket closes, so nothing scans on in the background.
     listener.stop(true);

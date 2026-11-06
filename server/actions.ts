@@ -79,8 +79,10 @@ export function applyAction(db: Database, request: ActionRequest, now = Date.now
       db.query("UPDATE devices SET trusted = ? WHERE id = ?").run(request.action === "trust" ? 1 : 0, id);
       break;
     case "watch":
+      db.query("UPDATE devices SET watched = 1, watched_at = ? WHERE id = ?").run(now, id);
+      break;
     case "unwatch":
-      db.query("UPDATE devices SET watched = ? WHERE id = ?").run(request.action === "watch" ? 1 : 0, id);
+      db.query("UPDATE devices SET watched = 0, watched_at = NULL WHERE id = ?").run(id);
       break;
   }
   db.query("INSERT INTO action_log (ts, action, device_id) VALUES (?, ?, ?)").run(now, request.action, id);

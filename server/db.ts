@@ -100,6 +100,9 @@ function migrate(db: Database): void {
   if (!columns.some((column) => column.name === "label")) {
     db.run("ALTER TABLE devices ADD COLUMN label TEXT");
   }
+  if (!columns.some((column) => column.name === "watched_at")) {
+    db.run("ALTER TABLE devices ADD COLUMN watched_at INTEGER");
+  }
   const personColumns = db.query("PRAGMA table_info(people)").all() as { name: string }[];
   if (!personColumns.some((column) => column.name === "public_label")) {
     db.run("ALTER TABLE people ADD COLUMN public_label TEXT");
