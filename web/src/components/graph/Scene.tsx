@@ -701,7 +701,10 @@ export default function Scene(props: Props) {
         const stop = stops[0];
         return stop ? [{ id: device.id, position: [x, stop.y + 0.012, z] }] : [];
       });
-    if (fresh.length > 0) setLandings((current) => [...current, ...fresh]);
+    // A device can drop out of the snapshot and come back while its ripple is still running.
+    if (fresh.length > 0) {
+      setLandings((current) => [...current, ...fresh.filter((landing) => !current.some(({ id }) => id === landing.id))]);
+    }
   }, [model, reducedMotion]);
 
   const landed = useCallback((id: number) => {

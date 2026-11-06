@@ -57,11 +57,11 @@ interface TitleProps {
   tone: string;
   editing: boolean;
   onEdit: (editing: boolean) => void;
-  onAction: Props["onAction"];
+  run: (request: ActionRequest) => void;
 }
 
 /** The heading is the field, so naming a device doesn't move anything on the page. */
-function Title({ device, tone, editing, onEdit, onAction }: TitleProps) {
+function Title({ device, tone, editing, onEdit, run }: TitleProps) {
   const [draft, setDraft] = useState("");
   const nameable = device.owner !== null;
 
@@ -69,9 +69,14 @@ function Title({ device, tone, editing, onEdit, onAction }: TitleProps) {
     if (editing) setDraft(device.label ?? "");
   }, [editing, device.label]);
 
+  // A claim that failed takes the owner away again, and there's nothing left to name.
+  useEffect(() => {
+    if (editing && !nameable) onEdit(false);
+  }, [editing, nameable, onEdit]);
+
   const save = () => {
     onEdit(false);
-    if (draft.trim() !== (device.label ?? "")) void onAction({ action: "name-device", deviceId: device.id, label: draft });
+    if (draft.trim() !== (device.label ?? "")) run({ action: "name-device", deviceId: device.id, label: draft });
   };
 
   return (
@@ -155,24 +160,16 @@ interface IdentityProps {
   device: DeviceView;
   people: PersonView[];
   reveal: boolean;
+  failed: boolean;
   onName: () => void;
-  onAction: Props["onAction"];
+  run: (request: ActionRequest) => void;
 }
 
-function Identity({ device, people, reveal, onName, onAction }: IdentityProps) {
-  const [failed, setFailed] = useState(false);
+function Identity({ device, people, reveal, failed, onName, run }: IdentityProps) {
   const [adding, setAdding] = useState(false);
   const mine = device.owner?.self === true;
   const other = device.owner && !device.owner.self ? device.owner : null;
   const person = people.find((candidate) => candidate.label === other?.label);
-
-  const run = useCallback(
-    (request: ActionRequest) => {
-      setFailed(false);
-      onAction(request).catch(() => setFailed(true));
-    },
-    [onAction],
-  );
 
   // Tagging a device is usually followed by naming it, so go straight there.
   const tag = useCallback(
@@ -200,13 +197,17 @@ function Identity({ device, people, reveal, onName, onAction }: IdentityProps) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (typing(event)) return;
-      if (event.key === "m") toggleMine();
-      if (event.key === "t") toggleTrust();
-      if (event.key === "w") toggleWatch();
-      if (event.key === "n" && device.owner) {
-        event.preventDefault();
-        onName();
-      }
+      const shortcuts: Record<string, (() => void) | undefined> = {
+        m: toggleMine,
+        t: toggleTrust,
+        w: toggleWatch,
+        n: device.owner ? onName : undefined,
+      };
+      const shortcut = shortcuts[event.key];
+      if (!shortcut) return;
+      // These can focus the name field, and the key must not land in it as text.
+      event.preventDefault();
+      shortcut();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -295,14 +296,22 @@ function Identity({ device, people, reveal, onName, onAction }: IdentityProps) {
 function DeviceObject({ snapshot, device, finding, detail, onAction }: Props & { device: DeviceView }) {
   const tone = finding?.severity === "high" ? "var(--alert)" : device.owner?.self ? "var(--you)" : "var(--ink)";
   const [editing, setEditing] = useState(false);
+  const [failed, setFailed] = useState(false);
   const startNaming = useCallback(() => setEditing(true), []);
+  const run = useCallback(
+    (request: ActionRequest) => {
+      setFailed(false);
+      onAction(request).catch(() => setFailed(true));
+    },
+    [onAction],
+  );
   const places = new Map<number, PlaceView>(snapshot.places.map((place) => [place.id, place]));
   const now = snapshot.generatedAt;
   const stability = STABILITY[device.stability];
   return (
     <>
       <section className="inspector-head">
-        <Title device={device} tone={tone} editing={editing} onEdit={setEditing} onAction={onAction} />
+        <Title device={device} tone={tone} editing={editing} onEdit={setEditing} run={run} />
         <p className="object-sub">
           {device.classLabel}
           <span className="stability" data-stability={device.stability} title={stability.detail}>{stability.word}</span>
@@ -314,7 +323,7 @@ function DeviceObject({ snapshot, device, finding, detail, onAction }: Props & {
           </p>
         )}
       </section>
-      <Identity device={device} people={snapshot.people} reveal={snapshot.reveal} onName={startNaming} onAction={onAction} />
+      <Identity device={device} people={snapshot.people} reveal={snapshot.reveal} failed={failed} onName={startNaming} run={run} />
       <section className="section">
         <dl className="facts">
           <dt>Owner</dt>
