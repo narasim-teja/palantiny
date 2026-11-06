@@ -67,9 +67,19 @@ Some gadgets rotate their address but keep a serial in their name, like `Galaxy 
 
 The same file turns names into safe labels, so a WHOOP shows as "WHOOP band" without its serial, even on recordings.
 
-### Stable, Rotating or New
+### Can it be followed?
 
-Every device says which it is. **Stable** means it has held one identity for at least 2 hours, or it's paired with your Mac, so it should match at other places. **Rotating** means it has changed identity. **New** means it's too soon to tell.
+Every device shows which of these it is, so you know what a match would mean.
+
+| Label | Meaning | Follows between places? |
+|---|---|---|
+| **Stable** | One identity for 2+ hours, or paired with your Mac | Yes |
+| **Named** | Rotates, but keeps a serial in its name | Yes, whenever it broadcasts that name |
+| **Keyed** | A separated Find My device | Same day. The [IETF draft](https://datatracker.ietf.org/doc/html/draft-ietf-dult-accessory-protocol-00) has it rotate every 24 hours, and on any change of state |
+| **Rotating** | Changes identity | No |
+| **New** | Too soon to tell | Not yet known |
+
+The category of gadget doesn't settle this. On real data a Galaxy Watch rotated every 39 minutes or so and could only be followed by its name, a WHOOP held one identity for days, and Fitbits rotated with a name too generic to use. Strangers' AirPods rotated like phones.
 
 ### What can be matched between places
 
@@ -99,6 +109,9 @@ Apple manufacturer data carries a series of typed messages, and type `0x12` is [
 | Any other unclaimed device at 2+ places | Review |
 | Tracker or separated device at 1 place, while in range or after 60 minutes there | Note |
 | A device you tagged to someone else, at 2+ places | Note |
+| A watched stranger at a new place | High |
+| A watched device you tagged to someone, at a new place | Review |
+| A watched device back after 2+ hours away | Note |
 
 ## Plugging in
 
@@ -140,7 +153,15 @@ Broadcast names and people's real names are removed unless you add `?reveal=1`. 
 
 The API is loopback only, and it refuses other hosts and web origins. That means a native app on the same Mac works as it is. A phone app is different, because it would have to reach the Mac over a network, which exposes people's device names. That needs authentication first, and it doesn't exist yet.
 
-Separated devices pass by constantly, so the last rule matters. On real data it cut the list from 88 findings to 14.
+Separated devices pass by constantly, so the one-place rule matters. On real data it cut the list from 88 findings to 14.
+
+### Trust and Watch
+
+**Trust** means you know a device, so it never raises a finding. **Watch** means you want to know about it: anything you watch keeps its label on the graph, and raises a finding when it turns up somewhere new or comes back after a long absence.
+
+Absence is counted only in minutes the Mac was listening. A device heard either side of a night with the lid closed hasn't been away at all. The 2 hour threshold comes from replaying real data: at 30 minutes a watched device would fire several times a day from weak signals flickering, and at 2 hours that drops to about one or two.
+
+High findings and anything from Watch also send a macOS notification, using the same names a recording would show, because it can appear on a lock screen. Each one fires once.
 
 ## What we measured
 
@@ -167,7 +188,7 @@ One apartment, one MacBook, about 37 hours, with the lid closed overnight.
 
 - Following detection across two real places. So far that view has only run on labelled test data.
 - Whether alias links are correct. Nothing has checked them against a known device.
-- How long a separated key lasts. We saw none past about 15 hours, but coverage had gaps, and a device can simply leave.
+- How long a separated key lasts in practice. The draft spec says 24 hours, and we saw none past about 15, but coverage had gaps and a device can simply leave.
 
 ## Sources
 
@@ -175,6 +196,8 @@ One apartment, one MacBook, about 37 hours, with the lid closed overnight.
 - [AirGuard](https://arxiv.org/pdf/2202.11813), on Find My advert layout and tracking detection
 - [Who Can Find My Devices?](https://arxiv.org/pdf/2103.02282v1.pdf), on Apple's offline finding
 - [Snatcher](https://arxiv.org/pdf/2606.21067), on the separated state
+- [IETF DULT accessory protocol draft](https://datatracker.ietf.org/doc/html/draft-ietf-dult-accessory-protocol-00), on how often trackers rotate
+- [Tracking Anonymized Bluetooth Devices](https://petsymposium.org/popets/2019/popets-2019-0036.php), PETS 2019
 - [bleak's macOS backend](https://bleak.readthedocs.io/en/stable/backends/macos.html), on CoreBluetooth UUIDs
 - [Apple Developer Forums](https://developer.apple.com/forums/thread/124189), on CoreWLAN and Location
 - [Palantir Foundry docs](https://www.palantir.com/docs/foundry/ontology/core-concepts), on the ontology idea

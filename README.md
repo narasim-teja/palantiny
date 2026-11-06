@@ -64,6 +64,8 @@ Select a device and press `M` to claim it, then type a name. To tag someone you 
 
 Only devices you've tied to someone can be named. Everything else keeps its callsign.
 
+**Trust** a device to stop it raising findings. **Watch** one to get a macOS notification if it turns up somewhere new or comes back after a long absence. Each device shows whether it can be followed at all, so check that first: Watch can't hold on to something that rotates.
+
 For the full story, including what we measured and the research behind it, read [How it works](HOW_IT_WORKS.md).
 
 ## Reading the results honestly
@@ -71,7 +73,7 @@ For the full story, including what we measured and the research behind it, read 
 - **"In range" is the honest count.** The Device total keeps growing, because passers-by and rotated addresses that couldn't be linked each add a row. Quote the in-range number.
 - **Your own devices show up first.** They follow you everywhere, so claim them.
 - **Addresses rotate.** Linking aliases is inference. Dashed lines and confidence scores mark every guess, and any doubt means no link.
-- **Most phones can't be matched between places.** Gadgets with a fixed address or a serial in their name can, and separated Find My devices can for a while. Each device is labelled Stable, Rotating or New so you can tell which is which.
+- **Most phones can't be matched between places.** Gadgets with a fixed address or a serial in their name can, and separated Find My devices can for a while. Each device is labelled Stable, Named, Keyed, Rotating or New so you can tell which is which.
 - **A separated Find My device is not proof of anything.** It may be a neighbour's lost keys, or someone you're travelling with. This is a side project, not a safety tool. If you think you're being tracked, use your phone's built-in tracker alerts and contact the police.
 
 ## Privacy defaults
