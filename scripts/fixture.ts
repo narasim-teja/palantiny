@@ -3,8 +3,8 @@
 // flag whenever it is loaded, so it can never pass for real sightings.
 
 import { rmSync } from "node:fs";
-import { Ingest } from "../collector/ingest";
-import { openDb, setMeta } from "../lib/db";
+import { Ingest } from "../server/ingest";
+import { openDb, setMeta } from "../server/db";
 
 const PATH = "data/fixture.db";
 for (const suffix of ["", "-wal", "-shm"]) rmSync(PATH + suffix, { force: true });

@@ -10,11 +10,12 @@
     "url": "https://github.com/narasim-teja/Palantiny.git"
   },
   "scripts": {
-    "sensor:build": "bash sensor/build.sh",
-    "collect": "bun run collector/index.ts",
-    "web": "bun --bun next dev -H 127.0.0.1 -p 4117",
     "dev": "bun run scripts/dev.ts",
-    "build": "bun --bun next build",
+    "build": "bun --bun vite build --config web/vite.config.ts",
+    "start": "bun run sensor:build && bun run server/index.ts",
+    "server": "bun run server/index.ts",
+    "sensor:build": "bash native/macos/build.sh",
+    "fixture": "bun run scripts/fixture.ts",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit"
   },
@@ -23,8 +24,8 @@
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@react-three/drei": "10.7.9",
     "@react-three/fiber": "9.8.2",
+    "hono": "^4.13.16",
     "motion": "14.9.1",
-    "next": "16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.187.0"
@@ -34,6 +35,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",
-    "typescript": "^7.0.2"
+    "@vitejs/plugin-react": "^6.2.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
   }
 }

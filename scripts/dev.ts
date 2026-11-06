@@ -1,16 +1,20 @@
-// One command: builds the sensor if needed, then runs the collector and the console.
+// One command for development: builds the sensor if needed, then runs the server and
+// the console. Vite serves the console on 4117 and forwards /v1 to the server.
 
 export {};
 
-const build = Bun.spawn(["bash", "sensor/build.sh"], { stdout: "inherit", stderr: "inherit" });
-if ((await build.exited) !== 0) process.exit(1);
+if (process.platform === "darwin") {
+  const build = Bun.spawn(["bash", "native/macos/build.sh"], { stdout: "inherit", stderr: "inherit" });
+  if ((await build.exited) !== 0) process.exit(1);
+}
 
 const children = [
-  Bun.spawn(["bun", "run", "collector/index.ts"], { stdout: "inherit", stderr: "inherit" }),
-  Bun.spawn(["bun", "--bun", "next", "dev", "-H", "127.0.0.1", "-p", "4117"], {
+  Bun.spawn(["bun", "run", "server/index.ts"], {
+    env: { ...process.env, PALANTINY_PORT: "4118", PALANTINY_WEB_ORIGIN: "http://127.0.0.1:4117" },
     stdout: "inherit",
     stderr: "inherit",
   }),
+  Bun.spawn(["bun", "--bun", "vite", "--config", "web/vite.config.ts"], { stdout: "inherit", stderr: "inherit" }),
 ];
 
 console.log("palantiny: console at http://127.0.0.1:4117");
