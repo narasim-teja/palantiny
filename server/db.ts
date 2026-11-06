@@ -94,6 +94,18 @@ CREATE TABLE IF NOT EXISTS action_log (
 );
 `;
 
+/** Columns added after the first release, so existing databases keep working. */
+function migrate(db: Database): void {
+  const columns = db.query("PRAGMA table_info(devices)").all() as { name: string }[];
+  if (!columns.some((column) => column.name === "label")) {
+    db.run("ALTER TABLE devices ADD COLUMN label TEXT");
+  }
+  const personColumns = db.query("PRAGMA table_info(people)").all() as { name: string }[];
+  if (!personColumns.some((column) => column.name === "public_label")) {
+    db.run("ALTER TABLE people ADD COLUMN public_label TEXT");
+  }
+}
+
 export function openDb(path = dbPath()): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
@@ -102,6 +114,7 @@ export function openDb(path = dbPath()): Database {
   db.run("PRAGMA busy_timeout = 4000");
   db.run("PRAGMA foreign_keys = ON");
   db.run(SCHEMA);
+  migrate(db);
   db.run("INSERT OR IGNORE INTO people (code, label, self) VALUES ('YOU', 'You', 1)");
   return db;
 }

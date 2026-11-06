@@ -1,11 +1,16 @@
 import type { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
 import { mergeClass, parseAdvert } from "@core/classify";
+import { isDistinctiveName } from "@core/recognise";
 import type { BleEvent, WifiEvent } from "@core/events";
 import { getMeta, setMeta } from "./db";
 import { inferLink, HANDOVER_WINDOW_MS, type AliasFacts } from "@core/inference";
 import { decidePlace, placeCode, type PlaceFingerprint } from "@core/places";
 import type { DeviceClass } from "@core/types";
+
+// A distinctive name is strong evidence, but it's still a guess, so it reads as inferred.
+const NAME_LINK_CONFIDENCE = 0.85;
+const NAME_LINK_EVIDENCE = "Same distinctive broadcast name";
 
 const RETENTION_MS = 30 * 24 * 3_600_000;
 const BANDS: Record<number, string> = { 1: "2.4 GHz", 2: "5 GHz", 3: "6 GHz" };
@@ -113,10 +118,11 @@ export class Ingest {
       const byKey = tagKey
         ? (this.db.query("SELECT id FROM devices WHERE tag_key = ?").get(tagKey) as { id: number } | null)
         : null;
+      const distinctive = event.name ? isDistinctiveName(event.name) : false;
       const byName = !byKey && event.name
         ? (this.db
-            .query("SELECT id FROM devices WHERE paired = 1 AND name = ?")
-            .get(event.name) as { id: number } | null)
+            .query("SELECT id FROM devices WHERE name = ? AND (paired = 1 OR ?) ORDER BY paired DESC, id LIMIT 1")
+            .get(event.name, distinctive ? 1 : 0) as { id: number } | null)
         : null;
       deviceId =
         byKey?.id ??
@@ -164,6 +170,78 @@ export class Ingest {
            rssi_max = MAX(rssi_max, excluded.rssi_max)`,
       )
       .run(event.id, this.placeId, Math.floor(event.ts / 60_000), event.rssi, event.rssi);
+  }
+
+  /**
+   * Gadgets that rotate their address but keep a serial in their name would otherwise
+   * become a new device each time. This also works across places, which timing can't.
+   */
+  mergeByName(): number {
+    const groups = this.db
+      .query("SELECT name FROM devices WHERE name IS NOT NULL GROUP BY name HAVING COUNT(*) > 1")
+      .all() as { name: string }[];
+    let merged = 0;
+
+    for (const { name } of groups) {
+      if (!isDistinctiveName(name)) continue;
+      const rows = this.db
+        .query(
+          `SELECT id, class, find_my AS findMy, tag_key AS tagKey, person_id AS personId, label,
+                  trusted, watched, first_seen AS firstSeen, last_seen AS lastSeen
+           FROM devices WHERE name = ?
+           ORDER BY paired DESC, person_id IS NOT NULL DESC, id`,
+        )
+        .all(name) as {
+        id: number;
+        class: DeviceClass;
+        findMy: string | null;
+        tagKey: string | null;
+        personId: number | null;
+        label: string | null;
+        trusted: number;
+        watched: number;
+        firstSeen: number;
+        lastSeen: number;
+      }[];
+      const [keeper, ...others] = rows;
+      if (!keeper) continue;
+
+      this.db.transaction(() => {
+        for (const other of others) {
+          this.db
+            .query(
+              `UPDATE aliases SET device_id = ?,
+                 link_confidence = COALESCE(link_confidence, ?),
+                 link_evidence = COALESCE(link_evidence, ?)
+               WHERE device_id = ?`,
+            )
+            .run(keeper.id, NAME_LINK_CONFIDENCE, NAME_LINK_EVIDENCE, other.id);
+          this.db.query("DELETE FROM devices WHERE id = ?").run(other.id);
+          merged += 1;
+        }
+        const pick = <T>(value: (row: (typeof rows)[number]) => T | null) =>
+          rows.map(value).find((candidate) => candidate !== null) ?? null;
+        this.db
+          .query(
+            `UPDATE devices SET class = ?, find_my = ?, tag_key = ?, person_id = ?, label = ?,
+               trusted = ?, watched = ?, first_seen = ?, last_seen = ?
+             WHERE id = ?`,
+          )
+          .run(
+            rows.reduce((best, row) => mergeClass(best, row.class), keeper.class),
+            rows.some((row) => row.findMy === "separated") ? "separated" : pick((row) => row.findMy),
+            pick((row) => row.tagKey),
+            pick((row) => row.personId),
+            pick((row) => row.label),
+            rows.some((row) => row.trusted === 1) ? 1 : 0,
+            rows.some((row) => row.watched === 1) ? 1 : 0,
+            Math.min(...rows.map((row) => row.firstSeen)),
+            Math.max(...rows.map((row) => row.lastSeen)),
+            keeper.id,
+          );
+      })();
+    }
+    return merged;
   }
 
   /** Links new aliases to the alias they most likely rotated from. */

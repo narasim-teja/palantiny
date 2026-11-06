@@ -1,16 +1,20 @@
 import type { Database } from "bun:sqlite";
+import { callsign } from "@core/callsign";
 import { classLabel } from "@core/classify";
 import { getMeta } from "./db";
 import { deriveFindings } from "@core/findings";
+import { recognise } from "@core/recognise";
 import type {
   DeviceClass,
   DeviceDetail,
   DeviceView,
   FindMyState,
   NetworkView,
+  PersonView,
   PlaceView,
   SensorStatus,
   Snapshot,
+  Stability,
   Visit,
 } from "@core/types";
 
@@ -20,6 +24,8 @@ const OFFLINE_AFTER_MS = 120_000;
 const VISIT_GAP_MINUTES = 10;
 const MAX_DEVICES = 160;
 const MAX_NETWORKS = 60;
+// A single address held this long has stopped being a rotation that hasn't happened yet.
+const STABLE_AFTER_MS = 2 * 3_600_000;
 
 interface DeviceRow {
   id: number;
@@ -28,6 +34,7 @@ interface DeviceRow {
   vendor: string | null;
   find_my: FindMyState;
   name: string | null;
+  label: string | null;
   trusted: number;
   watched: number;
   paired: number;
@@ -35,9 +42,17 @@ interface DeviceRow {
   last_seen: number;
   person_code: string | null;
   person_label: string | null;
+  person_public: string | null;
   person_self: number | null;
   alias_count: number;
   min_confidence: number | null;
+  longest_alias: number | null;
+}
+
+function stabilityOf(row: DeviceRow): Stability {
+  if (row.paired === 1) return "stable";
+  if (row.alias_count > 1) return "rotating";
+  return (row.longest_alias ?? 0) >= STABLE_AFTER_MS ? "stable" : "new";
 }
 
 function readStatus(db: Database, now: number): SensorStatus {
@@ -126,8 +141,10 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
 
   const rows = db
     .query(
-      `SELECT d.*, p.code AS person_code, p.label AS person_label, p.self AS person_self,
-              COUNT(a.id) AS alias_count, MIN(a.link_confidence) AS min_confidence
+      `SELECT d.*, p.code AS person_code, p.label AS person_label, p.public_label AS person_public,
+              p.self AS person_self,
+              COUNT(a.id) AS alias_count, MIN(a.link_confidence) AS min_confidence,
+              MAX(a.last_seen - a.first_seen) AS longest_alias
        FROM devices d
        LEFT JOIN people p ON p.id = d.person_id
        LEFT JOIN aliases a ON a.device_id = d.id
@@ -137,19 +154,26 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
 
   const all: DeviceView[] = rows.map((row) => {
     const self = row.person_self === 1;
+    // What a broadcast says it is beats what we could guess from its advert. A separated
+    // Find My device keeps that label, because that's the more useful thing to know.
+    const known = row.find_my === "separated" ? null : recognise(row.name);
+    const deviceClass = known?.class ?? row.class;
     return {
       id: row.id,
-      code: row.code ?? `DEV-${String(row.id).padStart(4, "0")}`,
-      class: row.class,
-      classLabel: classLabel(row.class, row.find_my),
+      code: callsign(row.id),
+      class: deviceClass,
+      classLabel: known?.kind ?? classLabel(deviceClass, row.find_my),
       vendor: row.vendor,
       findMy: row.find_my,
       // Your own devices may show their name. Nobody else's does in screenshot mode.
       name: reveal ? row.name : null,
       hasName: row.name !== null,
+      // Your own names are yours to show. Someone else never agreed to be on a recording.
+      label: self || reveal ? row.label : null,
       owner: row.person_code
-        ? { code: row.person_code, label: row.person_label, self }
+        ? { code: row.person_code, label: self || reveal ? row.person_label : row.person_public, self }
         : null,
+      stability: stabilityOf(row),
       trusted: row.trusted === 1,
       watched: row.watched === 1,
       paired: row.paired === 1,
@@ -224,6 +248,12 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
     placeIds: row.place_ids.split(",").map(Number),
   }));
 
+  const people: PersonView[] = reveal
+    ? (db
+        .query("SELECT id, label, public_label AS publicLabel FROM people WHERE self = 0 ORDER BY label")
+        .all() as PersonView[])
+    : [];
+
   const count = (sql: string) => (db.query(sql).get() as { n: number }).n;
 
   return {
@@ -231,6 +261,7 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
     reveal,
     fixture: getMeta(db, "fixture") === "1",
     status: readStatus(db, now),
+    people,
     places,
     devices,
     networks,

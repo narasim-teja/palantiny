@@ -38,6 +38,7 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
   }
 
   const ingest = new Ingest(db);
+  ingest.mergeByName();
   let connected = 0;
 
   // The heartbeat means a sensor is really there, so "Listening" is only ever true.
@@ -107,7 +108,7 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
       if (connected > 0) beat();
     }, HEARTBEAT_MS),
     setInterval(() => {
-      const linked = ingest.linkAliases(Date.now());
+      const linked = ingest.linkAliases(Date.now()) + ingest.mergeByName();
       if (linked > 0) console.log(`server: linked ${linked} rotated aliases`);
     }, LINK_MS),
     setInterval(() => ingest.prune(Date.now()), PRUNE_MS),
