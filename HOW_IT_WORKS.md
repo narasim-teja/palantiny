@@ -5,17 +5,20 @@ palantiny turns public radio broadcasts into a small ontology, then asks whether
 ## The pipeline
 
 ```text
-Swift sensor  ->  Unix socket  ->  Bun collector  ->  SQLite  ->  Next.js routes  ->  browser
- (listens)        (JSON lines)     (reasons)         (stores)    (SSE, every 3s)     (three.js)
+native/macos  ->  Unix socket  ->  server/         ->  HTTP + SSE  ->  web/
+ (listens)        (JSON lines)     Bun + Hono          (/v1)          Vite + React
+                                   SQLite, core/                      three.js
 ```
 
-There's no hosted backend. The API routes in `app/api/` run inside the local Next.js server, because a browser can't read SQLite or the Bluetooth radio itself.
+One Bun process owns the database and everything that touches it. It reads sensor events, runs the inference in `core/`, and serves the API. It runs on your own machine and binds to `127.0.0.1`, so there's nothing to host.
+
+The sensor is the only part that isn't TypeScript, because browsers can't scan Wi-Fi or listen to all nearby Bluetooth. Apple's CoreBluetooth and CoreWLAN do that, automatically and continuously, from a native app: Bluetooth runs all the time, and Wi-Fi scans every 45 seconds.
 
 ### Why the sensor is a real app
 
-macOS hides Wi-Fi names and BSSIDs from anything without Location permission, and a bare command-line binary can't reliably hold that permission. In our testing a CLI scan returned 0 names and 0 BSSIDs, and a signed `.app` with Location returned 21 of 30 names and 30 of 30 BSSIDs. So the sensor is a small ad-hoc signed app bundle, launched with `open`, which streams JSON lines over a Unix socket and exits when the collector goes away.
+macOS hides Wi-Fi names and BSSIDs from anything without Location permission, and a bare command-line binary can't reliably hold that permission. In our testing a CLI scan returned 0 names and 0 BSSIDs, and a signed `.app` with Location returned 21 of 30 names and 30 of 30 BSSIDs. So the sensor is a small ad-hoc signed app bundle, launched with `open`, which streams JSON lines over a Unix socket and exits when the server goes away.
 
-`sensor/build.sh` skips unchanged builds, because a new ad-hoc signature can make macOS ask for permissions again.
+`native/macos/build.sh` skips unchanged builds, because a new ad-hoc signature can make macOS ask for permissions again.
 
 ## The ontology
 
@@ -47,7 +50,7 @@ Apple devices were [measured in 2019](https://petsymposium.org/popets/2019/popet
 
 ### Linking aliases
 
-`lib/inference.ts` links an alias to the one before it only when all of this holds:
+`core/inference.ts` links an alias to the one before it only when all of this holds:
 
 - Same place and same advert signature.
 - The old alias stopped as the new one started: at most 45 seconds apart, with up to 5 seconds of overlap.
@@ -71,19 +74,59 @@ We chose not to fingerprint phones through rotation. [Research shows it's possib
 
 ## Find My
 
-Apple manufacturer data carries a series of typed messages, and type `0x12` is [Find My](https://arxiv.org/pdf/2202.11813). The short form means the device is near its owner. The long form carries a public key and means it's [separated](https://arxiv.org/pdf/2606.21067), so `lib/classify.ts` treats a payload of 25 bytes or more as separated, and stores a hash of the key as a stable identity.
+Apple manufacturer data carries a series of typed messages, and type `0x12` is [Find My](https://arxiv.org/pdf/2202.11813). The short form means the device is near its owner. The long form carries a public key and means it's [separated](https://arxiv.org/pdf/2606.21067), so `core/classify.ts` treats a payload of 25 bytes or more as separated, and stores a hash of the key as a stable identity.
 
 "Separated" doesn't mean AirTag. AirPods and other Find My accessories send it too. It also doesn't mean lost, since a device can be separated because its owner stepped out.
 
 ## Findings
 
-`lib/findings.ts` only counts a place after 3 minutes there, so one stray advert isn't a sighting. Devices you've claimed or trusted are skipped.
+`core/findings.ts` only counts a place after 3 minutes there, so one stray advert isn't a sighting. Devices you've claimed or trusted are skipped.
 
 | Finding | Severity |
 |---|---|
 | Tracker or separated device at 2+ places | High |
 | Any other unclaimed device at 2+ places | Review |
 | Tracker or separated device at 1 place | Note |
+
+## Plugging in
+
+palantiny has two seams, so you can replace either end without touching the middle.
+
+### Write a sensor
+
+Anything that writes these as JSON lines to the server's Unix socket is a sensor. The types are in `core/events.ts`, and malformed lines are dropped.
+
+```jsonc
+{ "t": "hello",  "ts": 1793850000000, "v": 1 }
+{ "t": "status", "ts": 1793850000000, "bluetooth": "on", "location": "allowed", "wifi": "on" }
+{ "t": "ble",    "ts": 1793850000000, "id": "stable-id", "rssi": -60, "name": "Optional", "mfr": "4c0012...", "svc": ["FD5A"] }
+{ "t": "wifi",   "ts": 1793850000000, "nets": [{ "ssid": "Cafe", "bssid": "aa:bb:cc:dd:ee:ff", "rssi": -50, "secured": true }] }
+```
+
+Keep `id` the same for as long as the sender keeps an address. `mfr` is hex manufacturer data, company ID first. Send a `wifi` event every 30 to 60 seconds, because places are recognised from those.
+
+To run your own, start the server without the macOS app:
+
+```sh
+PALANTINY_SENSOR=external bun run server
+```
+
+It listens on `data/sensor.sock`, or wherever `PALANTINY_SOCKET` points. Several sensors can connect at once. A Linux sensor on a small always-on board would also solve the lid-closed gap.
+
+### Write a client
+
+The web console only uses this API, so a native app can do everything it does.
+
+| Route | Does |
+|---|---|
+| `GET /v1/snapshot` | The ontology as JSON |
+| `GET /v1/stream` | The same as server-sent events, every 3 seconds |
+| `GET /v1/devices/:id` | Aliases, sightings and log for one device |
+| `POST /v1/actions` | `claim`, `trust`, `watch`, `rename-place` and their opposites |
+
+Names are removed unless you add `?reveal=1`. The response types are in `core/types.ts`.
+
+The API is loopback only, and it refuses other hosts and web origins. That means a native app on the same Mac works as it is. A phone app is different, because it would have to reach the Mac over a network, which exposes people's device names. That needs authentication first, and it doesn't exist yet.
 
 ## What we measured
 

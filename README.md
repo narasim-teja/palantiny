@@ -2,7 +2,7 @@
 
 A local console that listens to public Bluetooth and Wi-Fi broadcasts around your Mac, models them as an ontology, and answers one question: is anything following me?
 
-Everything stays on your Mac. There's no account, no cloud and no hosted backend, and the web server binds to `127.0.0.1` only.
+Everything stays on your Mac. There's no account, no cloud and nothing hosted, and the server binds to `127.0.0.1` only.
 
 palantiny is a side project. It has no connection to Palantir Technologies.
 
@@ -33,14 +33,19 @@ Each plate is a place. Every device stands on a needle: closer to the centre is 
 ## How it's built
 
 ```text
-sensor/       Swift app: passive Bluetooth and Wi-Fi scanning, JSON lines over a Unix socket
-collector/    Bun process: files events into SQLite, recognises places, links rotating aliases
-lib/          The ontology, inference and findings (pure, tested)
-app/          Next.js console, plus the local API routes that read SQLite
-components/   Console UI, with three.js for the graph
-hooks/        Live data and media queries for the UI
-scripts/      One-command dev runner and labelled test data
+native/macos/  Swift sensor: passive Bluetooth and Wi-Fi scanning
+server/        Bun + Hono: owns SQLite, files sensor events, serves the API
+core/          The ontology, parsing and inference (pure TypeScript, tested)
+web/           Vite + React console, with three.js for the graph
+scripts/       One-command dev runner and labelled test data
 ```
+
+Two seams keep this pluggable:
+
+- **Sensors** write JSON lines to a Unix socket, so one can be written in any language, for any OS.
+- **Clients** use the local HTTP API at `/v1`, so the web console is only one possible client.
+
+Both are documented in [How it works](HOW_IT_WORKS.md#plugging-in).
 
 | Object | What it is |
 |---|---|
@@ -69,7 +74,7 @@ For the full story, including what we measured and the research behind it, read 
 - BSSIDs are stored only as salted hashes.
 - Strangers' sightings are deleted after 30 days.
 - Listening only: no connecting to devices and no packet capture.
-- The sensor exits when the collector stops, so nothing keeps scanning in the background.
+- The sensor exits when the server stops, so nothing keeps scanning in the background.
 - `data/` is gitignored, because it holds nearby devices' names. Don't share it.
 
 Be considerate with this. The people around you didn't opt in, so keep their devices pseudonymous and don't use it to follow anyone.
@@ -78,11 +83,12 @@ Be considerate with this. The people around you didn't opt in, so keep their dev
 
 | Command | Does |
 |---|---|
-| `bun run dev` | Sensor, collector and console together |
-| `bun test` | Tests for parsing, places, linking, findings and redaction |
+| `bun run dev` | Sensor, server and console together, with hot reload |
+| `bun run build && bun run start` | The same on one port, serving the built console |
+| `bun test` | Tests for parsing, places, linking, findings, the API and redaction |
 | `bun run typecheck` | Type check |
-| `bun run scripts/fixture.ts` | Builds `data/fixture.db`, labelled test data for layout work |
-| `PALANTINY_DB=data/fixture.db bun run web` | Runs the console on that test data |
+| `bun run fixture` | Builds `data/fixture.db`, labelled test data for layout work |
+| `PALANTINY_DB=data/fixture.db PALANTINY_SENSOR=off bun run server` | Serves the built console on that test data |
 
 Keyboard: `G` graph, `L` list, `F` film mode, `Esc` clear selection.
 
