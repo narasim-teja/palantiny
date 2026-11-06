@@ -86,7 +86,7 @@ Apple manufacturer data carries a series of typed messages, and type `0x12` is [
 |---|---|
 | Tracker or separated device at 2+ places | High |
 | Any other unclaimed device at 2+ places | Review |
-| Tracker or separated device at 1 place | Note |
+| Tracker or separated device at 1 place, while in range or after 60 minutes there | Note |
 
 ## Plugging in
 
@@ -127,6 +127,8 @@ The web console only uses this API, so a native app can do everything it does.
 Names are removed unless you add `?reveal=1`. The response types are in `core/types.ts`.
 
 The API is loopback only, and it refuses other hosts and web origins. That means a native app on the same Mac works as it is. A phone app is different, because it would have to reach the Mac over a network, which exposes people's device names. That needs authentication first, and it doesn't exist yet.
+
+Separated devices pass by constantly, so the last rule matters. On real data it cut the list from 88 findings to 14.
 
 ## What we measured
 
