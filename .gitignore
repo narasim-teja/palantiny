@@ -14,6 +14,10 @@ data/
 docs/
 PRODUCT.md
 
+# Videos play on GitHub only when uploaded through its editor, so they don't belong in git
+*.mp4
+*.mov
+
 # Local tooling and secrets
 .env*
 .impeccable/
