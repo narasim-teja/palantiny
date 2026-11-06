@@ -20,7 +20,7 @@ export type FindMyState = "separated" | "near-owner" | null;
 export type Severity = "high" | "medium" | "note";
 
 export interface SensorStatus {
-  collector: "live" | "stale" | "offline";
+  sensor: "live" | "stale" | "offline";
   bluetooth: string;
   location: string;
   wifi: string;
