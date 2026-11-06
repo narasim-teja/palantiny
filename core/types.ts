@@ -19,6 +19,9 @@ export type FindMyState = "separated" | "near-owner" | null;
 
 export type Severity = "high" | "medium" | "note";
 
+/** Whether this identity can be recognised again later, at another place. */
+export type Stability = "stable" | "rotating" | "new";
+
 export interface SensorStatus {
   sensor: "live" | "stale" | "offline";
   bluetooth: string;
@@ -55,7 +58,11 @@ export interface DeviceView {
   /** Null in screenshot mode. */
   name: string | null;
   hasName: boolean;
+  /** Your own name for it. Someone else's device keeps this out of screenshot mode. */
+  label: string | null;
+  /** In screenshot mode someone else appears under their public name, or none at all. */
   owner: { code: string; label: string | null; self: boolean } | null;
+  stability: Stability;
   trusted: boolean;
   watched: boolean;
   paired: boolean;
@@ -98,11 +105,21 @@ export interface Visit {
   end: number;
 }
 
+export interface PersonView {
+  id: number;
+  /** Their real name, which never leaves this console in screenshot mode. */
+  label: string;
+  /** What recordings show instead. */
+  publicLabel: string | null;
+}
+
 export interface Snapshot {
   generatedAt: number;
   reveal: boolean;
   fixture: boolean;
   status: SensorStatus;
+  /** People you've added. Empty in screenshot mode, because it's a list of names. */
+  people: PersonView[];
   places: PlaceView[];
   devices: DeviceView[];
   networks: NetworkView[];
@@ -134,4 +151,6 @@ export interface DeviceDetail {
 
 export type ActionRequest =
   | { action: "claim" | "unclaim" | "trust" | "untrust" | "watch" | "unwatch"; deviceId: number }
-  | { action: "rename-place"; placeId: number; label: string };
+  | { action: "rename-place"; placeId: number; label: string }
+  | { action: "assign"; deviceId: number; person: string; publicLabel?: string }
+  | { action: "name-device"; deviceId: number; label: string };

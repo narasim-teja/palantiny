@@ -24,6 +24,25 @@ export function deriveFindings(devices: DeviceView[]): Finding[] {
     if (device.owner?.self || device.trusted) continue;
 
     const placeIds = placesCounted(device);
+
+    // You told us whose this is, so it isn't a mystery. It's still worth a mention.
+    if (device.owner) {
+      if (placeIds.length >= 2) {
+        findings.push({
+          id: `known-${device.id}`,
+          severity: "note",
+          deviceId: device.id,
+          deviceCode: device.code,
+          placeIds,
+          confidence: device.identityConfidence,
+          observed: device.identityConfidence >= 1,
+          title: `${device.owner.label ?? "Someone you know"} seen at ${placeIds.length} places`,
+          detail: "You tagged this device, so it isn't a concern.",
+        });
+      }
+      continue;
+    }
+
     const observed = device.identityConfidence >= 1;
     const base = {
       deviceId: device.id,
