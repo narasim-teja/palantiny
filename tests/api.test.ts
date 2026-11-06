@@ -43,14 +43,18 @@ describe("api", () => {
   test("accepts the console, and native clients that send no origin", async () => {
     const console = { ...LOCAL, origin: "http://127.0.0.1:4117" };
     expect((await app.request("/v1/snapshot", { headers: console })).status).toBe(200);
+    const named = { host: "localhost:4117", origin: "http://localhost:4117" };
+    expect((await app.request("/v1/snapshot", { headers: named })).status).toBe(200);
     expect((await app.request("/v1/snapshot", { headers: LOCAL })).status).toBe(200);
   });
 
   test("trusts a configured dev server, whose proxy changes the host", async () => {
     const proxied = { host: "127.0.0.1:4118", origin: "http://127.0.0.1:4117" };
     expect((await app.request("/v1/snapshot", { headers: proxied })).status).toBe(403);
-    const dev = createApp(db, { webOrigin: "http://127.0.0.1:4117" });
+    const dev = createApp(db, { webOrigins: ["http://127.0.0.1:4117", "http://localhost:4117"] });
     expect((await dev.request("/v1/snapshot", { headers: proxied })).status).toBe(200);
+    const spelledOut = { ...proxied, origin: "http://localhost:4117" };
+    expect((await dev.request("/v1/snapshot", { headers: spelledOut })).status).toBe(200);
     const other = { ...proxied, origin: "http://127.0.0.1:3000" };
     expect((await dev.request("/v1/snapshot", { headers: other })).status).toBe(403);
   });

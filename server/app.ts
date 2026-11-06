@@ -25,12 +25,12 @@ function sameHost(origin: string, host: string): boolean {
 interface Options {
   /** Built console to serve alongside the API. */
   webRoot?: string;
-  /** A separate origin allowed to call the API, such as a dev server proxying to it. */
-  webOrigin?: string;
+  /** Separate origins allowed to call the API, such as a dev server proxying to it. */
+  webOrigins?: string[];
 }
 
 /** The whole API. Every client, the web console included, goes through these routes. */
-export function createApp(db: Database, { webRoot, webOrigin }: Options = {}) {
+export function createApp(db: Database, { webRoot, webOrigins = [] }: Options = {}) {
   const app = new Hono();
   const cache = new Map<boolean, { at: number; json: string }>();
 
@@ -48,7 +48,7 @@ export function createApp(db: Database, { webRoot, webOrigin }: Options = {}) {
   app.use("/v1/*", async (c, next) => {
     const host = c.req.header("host") ?? "";
     const origin = c.req.header("origin");
-    const trusted = !origin || origin === webOrigin || sameHost(origin, host);
+    const trusted = !origin || webOrigins.includes(origin) || sameHost(origin, host);
     if (!LOOPBACK.has(hostname(host)) || !trusted) {
       return c.json({ error: "Only local clients may use this API" }, 403);
     }

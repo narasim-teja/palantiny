@@ -16,7 +16,7 @@ const stopSensorLink = await startSensorLink(db, mode).catch((error: Error) => {
 const server = Bun.serve({
   hostname: HOST,
   port: PORT,
-  fetch: createApp(db, { webRoot: "web/dist", webOrigin: process.env.PALANTINY_WEB_ORIGIN }).fetch,
+  fetch: createApp(db, { webRoot: "web/dist", webOrigins: process.env.PALANTINY_WEB_ORIGINS?.split(",") }).fetch,
   // The event stream stays open for as long as a client is watching.
   idleTimeout: 0,
 });

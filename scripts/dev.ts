@@ -10,7 +10,12 @@ if (process.platform === "darwin") {
 
 const children = [
   Bun.spawn(["bun", "run", "server/index.ts"], {
-    env: { ...process.env, PALANTINY_PORT: "4118", PALANTINY_WEB_ORIGIN: "http://127.0.0.1:4117" },
+    // Both spellings reach Vite, and the browser sends whichever is in the address bar.
+    env: {
+      ...process.env,
+      PALANTINY_PORT: "4118",
+      PALANTINY_WEB_ORIGINS: "http://127.0.0.1:4117,http://localhost:4117",
+    },
     stdout: "inherit",
     stderr: "inherit",
   }),
