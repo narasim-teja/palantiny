@@ -34,10 +34,12 @@ export function deviceTitle(device: DeviceView): string {
   return device.label ?? device.name ?? device.code;
 }
 
-export const STABILITY: Record<DeviceView["stability"], { word: string; detail: string }> = {
-  stable: { word: "Stable", detail: "Keeps one identity, so it can be matched at other places" },
-  rotating: { word: "Rotating", detail: "Changes identity, so matching it between places is a guess" },
-  new: { word: "New", detail: "Too new to tell whether it rotates" },
+export const STABILITY: Record<DeviceView["stability"], { word: string; detail: string; followable: boolean }> = {
+  stable: { word: "Stable", detail: "Keeps one identity, so it can be matched at other places", followable: true },
+  named: { word: "Named", detail: "Rotates, but a serial in its name still identifies it", followable: true },
+  keyed: { word: "Keyed", detail: "Keeps its key for up to about a day, so same-day matches work", followable: true },
+  rotating: { word: "Rotating", detail: "Changes identity, so it can't be followed between places", followable: false },
+  new: { word: "New", detail: "Too new to tell whether it rotates", followable: false },
 };
 
 export function ago(from: number, now: number): string {

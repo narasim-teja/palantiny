@@ -281,10 +281,18 @@ function Identity({ device, people, reveal, failed, onName, run }: IdentityProps
           label={device.watched ? "Watching" : "Watch"}
           pressed={device.watched}
           shortcut="W"
-          title="Keep this device labelled on the graph"
+          title="Notify me if this comes back or turns up somewhere new"
           onClick={toggleWatch}
         />
       </div>
+
+      {device.watched && !STABILITY[device.stability].followable && (
+        <p className="hint">
+          {device.stability === "new"
+            ? "Too new to tell yet. If this rotates, Watch will lose it."
+            : "This rotates, so Watch will probably lose it when its identity changes."}
+        </p>
+      )}
 
       {!reveal && !device.owner && <p className="hint">Turn off Screenshot mode to see names and tag someone you know.</p>}
 

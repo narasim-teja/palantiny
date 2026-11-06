@@ -26,8 +26,9 @@ export function applyOptimistic(snapshot: Snapshot, request: ActionRequest): Sna
       case "untrust":
         return { ...device, trusted: request.action === "trust" };
       case "watch":
+        return { ...device, watched: true, watchedAt: Date.now() };
       case "unwatch":
-        return { ...device, watched: request.action === "watch" };
+        return { ...device, watched: false, watchedAt: null };
     }
   };
 
