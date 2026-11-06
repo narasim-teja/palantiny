@@ -98,7 +98,7 @@ Be considerate with this. The people around you didn't opt in, so keep strangers
 | `bun run fixture` | Builds `data/fixture.db`, labelled test data for layout work |
 | `PALANTINY_DB=data/fixture.db PALANTINY_SENSOR=off bun run server` | Serves the built console on that test data |
 
-Keyboard: `G` graph, `L` list, `F` film mode, `Esc` clear selection. With a device selected: `M` mine, `N` name, `T` trust, `W` watch.
+Keyboard: `G` graph, `L` list, `/` search, `F` film mode, `Esc` clear selection. With a device selected: `M` mine, `N` name, `T` trust, `W` watch.
 
 Film mode hides the panels and controls, slowly orbits the graph and captions it with what is in range now.
 

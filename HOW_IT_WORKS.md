@@ -146,6 +146,7 @@ The web console only uses this API, so a native app can do everything it does.
 |---|---|
 | `GET /v1/snapshot` | The ontology as JSON |
 | `GET /v1/stream` | The same as server-sent events, every 3 seconds |
+| `GET /v1/devices?q=` | Searches every device by name, person, callsign, type or status |
 | `GET /v1/devices/:id` | Aliases, sightings and log for one device |
 | `POST /v1/actions` | `claim`, `assign`, `name-device`, `trust`, `watch`, `rename-place` and their opposites |
 
