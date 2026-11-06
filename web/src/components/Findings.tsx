@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { ShapeIcon } from "./ShapeIcon";
 import type { DeviceView, Finding, PlaceView } from "@core/types";
-import { placeName, shapeFor } from "@/lib/view";
+import { deviceTitle, placeName, shapeFor } from "@/lib/view";
 
 const SEVERITY = { high: "High", medium: "Review", note: "Note" } as const;
 const VISIBLE_DEVICES = 6;
@@ -37,6 +37,10 @@ function group(findings: Finding[]): Group[] {
 export function Findings({ findings, places, devices, selectedId, onSelect }: Props) {
   const names = new Map(places.map((place) => [place.id, placeName(place)]));
   const byId = new Map(devices.map((device) => [device.id, device]));
+  const titleOf = (finding: Finding) => {
+    const device = byId.get(finding.deviceId);
+    return device ? deviceTitle(device) : finding.deviceCode;
+  };
   const inRange = (finding: Finding) => (byId.get(finding.deviceId)?.live ? 1 : 0);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const expand = (key: string) => setExpanded((current) => new Set(current).add(key));
@@ -82,7 +86,7 @@ export function Findings({ findings, places, devices, selectedId, onSelect }: Pr
                         aria-current={member.deviceId === selectedId}
                         onClick={() => onSelect(member.deviceId)}
                       >
-                        {member.deviceCode}
+                        {titleOf(member)}
                       </button>
                     ))}
                     {hidden > 0 && (

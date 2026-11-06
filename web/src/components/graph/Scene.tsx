@@ -538,13 +538,13 @@ interface Anchor {
   position: [number, number, number];
   text: string;
   detail?: string;
-  tone?: "alert" | "ink" | "you";
+  tone?: "alert" | "ink" | "you" | "mine";
   kind: "plate" | "callout" | "scale";
   current?: boolean;
   ghost?: boolean;
   /** Pixels between the anchor and the callout, before any collision nudge. */
   leader?: number;
-  /** Shown only because of a finding, so it can go when space is tight. */
+  /** Shown only for context, so it can go when space is tight. */
   resting?: boolean;
 }
 
@@ -585,13 +585,14 @@ function buildAnchors(places: PlaceView[], model: Model, selectedId: number | nu
   });
   for (const { device, stops, x, z, level } of model.items) {
     const selected = device.id === selectedId;
-    const resting = selectedId === null && (model.labelled.has(device.id) || device.watched);
+    const named = device.label !== null && device.live;
+    const resting = selectedId === null && (model.labelled.has(device.id) || device.watched || named);
     if (!selected && hoverId !== device.id && !resting) continue;
     anchors.push({
       key: `device-${device.id}`,
       position: [x, Math.max(...stops.map((stop) => stop.head)), z],
       text: deviceTitle(device),
-      tone: level === "high" ? "alert" : selected ? "ink" : undefined,
+      tone: level === "high" ? "alert" : selected ? "ink" : device.owner?.self ? "mine" : undefined,
       kind: "callout",
       leader: 16,
       resting: resting && !selected && level !== "high",

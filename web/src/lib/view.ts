@@ -31,8 +31,14 @@ export function findingFor(findings: Finding[], deviceId: number): Finding | und
 }
 
 export function deviceTitle(device: DeviceView): string {
-  return device.name ?? device.code;
+  return device.label ?? device.name ?? device.code;
 }
+
+export const STABILITY: Record<DeviceView["stability"], { word: string; detail: string }> = {
+  stable: { word: "Stable", detail: "Keeps one identity, so it can be matched at other places" },
+  rotating: { word: "Rotating", detail: "Changes identity, so matching it between places is a guess" },
+  new: { word: "New", detail: "Too new to tell whether it rotates" },
+};
 
 export function ago(from: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - from) / 1000));

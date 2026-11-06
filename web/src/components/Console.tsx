@@ -55,7 +55,7 @@ export function Console() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [webgl, setWebgl] = useState(true);
   const [version, setVersion] = useState(0);
-  const { snapshot, connected } = useSnapshot(reveal);
+  const { snapshot, connected, act: dispatch } = useSnapshot(reveal);
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const wide = !useMediaQuery(STACKED_QUERY);
 
@@ -89,10 +89,13 @@ export function Console() {
   const finding = snapshot && device ? findingFor(snapshot.findings, device.id) : undefined;
   const detail = useDeviceDetail(selectedId, (device?.lastSeen ?? 0) + version);
 
-  const act = useCallback(async (request: ActionRequest) => {
-    await postAction(request);
-    setVersion((current) => current + 1);
-  }, []);
+  const act = useCallback(
+    async (request: ActionRequest) => {
+      await dispatch(request, postAction);
+      setVersion((current) => current + 1);
+    },
+    [dispatch],
+  );
 
   const rename = useCallback(
     (placeId: number, label: string) => act({ action: "rename-place", placeId, label }),

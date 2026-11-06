@@ -40,7 +40,7 @@ export function Arrivals({ devices, selectedId, onSelect, now }: Props) {
                     fill={device.live ? "currentColor" : "none"}
                     stroke="currentColor"
                   />
-                  <span className="data">{deviceTitle(device)}</span>
+                  <span className="arrival-name">{deviceTitle(device)}</span>
                   <span className="arrival-class">{device.classLabel}</span>
                   <span className="arrival-age">{shortAgo(device.firstSeen, now)}</span>
                 </button>

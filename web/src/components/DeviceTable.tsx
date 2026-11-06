@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ShapeIcon } from "./ShapeIcon";
 import type { DeviceView, Finding } from "@core/types";
-import { ago, deviceTitle, findingFor, shapeFor } from "@/lib/view";
+import { ago, deviceTitle, findingFor, shapeFor, STABILITY } from "@/lib/view";
 
 type SortKey = "device" | "places" | "aliases" | "seen";
 
@@ -67,6 +67,7 @@ export function DeviceTable({ devices, findings, selectedId, onSelect, now }: Pr
               </th>
             ))}
             <th><span className="th-plain">Type</span></th>
+            <th><span className="th-plain">Identity</span></th>
             <th><span className="th-plain">Status</span></th>
           </tr>
         </thead>
@@ -90,8 +91,9 @@ export function DeviceTable({ devices, findings, selectedId, onSelect, now }: Pr
                 <td className="num">{device.aliasCount}</td>
                 <td className="num">{device.live ? "Now" : ago(device.lastSeen, now)}</td>
                 <td className="dim">{device.classLabel}</td>
+                <td className="dim" title={STABILITY[device.stability].detail}>{STABILITY[device.stability].word}</td>
                 <td>
-                  {device.owner?.self ? "Yours" : device.trusted ? "Trusted" : device.watched ? "Watching" : finding ? (alert ? "Flagged" : "Review") : ""}
+                  {device.owner?.self ? "Yours" : device.owner ? (device.owner.label ?? "Someone you know") : device.trusted ? "Trusted" : device.watched ? "Watching" : finding ? (alert ? "Flagged" : "Review") : ""}
                 </td>
               </tr>
             );

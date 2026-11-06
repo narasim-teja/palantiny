@@ -78,7 +78,7 @@ export function Timeline({ places, visits, device, detail, flagged, now }: Props
   return (
     <section className="timeline" aria-label="Timeline">
       <div className="timeline-head">
-        <strong className={device ? "data" : undefined}>{device ? deviceTitle(device) : "Your movements"}</strong>
+        <strong>{device ? deviceTitle(device) : "Your movements"}</strong>
         <span className="timeline-keys">
           <span className="key"><i className="key-visit" />This Mac at place</span>
           {device && <span className="key"><i className="key-sighting" style={{ background: mark }} />Device heard</span>}
