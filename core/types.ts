@@ -147,6 +147,12 @@ export interface Snapshot {
   };
 }
 
+export interface DeviceSearch {
+  /** Every match, which can be more than the devices returned. */
+  total: number;
+  devices: DeviceView[];
+}
+
 export interface AliasView {
   code: string;
   firstSeen: number;
