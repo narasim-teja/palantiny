@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { applyAction, parseAction } from "../lib/actions";
-import { classLabel, parseAdvert, parseAppleMessages } from "../lib/classify";
-import { openDb, setMeta } from "../lib/db";
-import { deriveFindings } from "../lib/findings";
-import { inferLink, type AliasFacts } from "../lib/inference";
-import { decidePlace, placeCode } from "../lib/places";
-import { buildSnapshot } from "../lib/snapshot";
-import type { DeviceView, Finding } from "../lib/types";
-import { filmCaption } from "../lib/view";
-import { Ingest } from "../collector/ingest";
+import { applyAction, parseAction } from "../server/actions";
+import { classLabel, parseAdvert, parseAppleMessages } from "../core/classify";
+import { openDb, setMeta } from "../server/db";
+import { deriveFindings } from "../core/findings";
+import { inferLink, type AliasFacts } from "../core/inference";
+import { decidePlace, placeCode } from "../core/places";
+import { buildSnapshot } from "../server/snapshot";
+import type { DeviceView, Finding } from "../core/types";
+import { filmCaption } from "../web/src/lib/view";
+import { Ingest } from "../server/ingest";
 
 const LONG = `4c0012 19 10${"ab".repeat(22)}0100`.replace(/ /g, "");
 
@@ -263,11 +263,11 @@ describe("ingest and snapshot", () => {
     expect(left.map((row) => row.id)).toEqual(["M"]);
   });
 
-  test("reports the collector as offline without a heartbeat", () => {
+  test("reports the sensor as offline without a heartbeat", () => {
     const { db } = seeded();
-    expect(buildSnapshot(db, false).status.collector).toBe("offline");
+    expect(buildSnapshot(db, false).status.sensor).toBe("offline");
     setMeta(db, "heartbeat", String(Date.now()));
-    expect(buildSnapshot(db, false).status.collector).toBe("live");
+    expect(buildSnapshot(db, false).status.sensor).toBe("live");
   });
 });
 
