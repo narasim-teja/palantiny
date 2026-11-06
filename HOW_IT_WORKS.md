@@ -79,7 +79,7 @@ Every device shows which of these it is, so you know what a match would mean.
 | **Rotating** | Changes identity | No |
 | **New** | Too soon to tell | Not yet known |
 
-The category of gadget doesn't settle this. On real data a Galaxy Watch rotated every 39 minutes or so and could only be followed by its name, a WHOOP held one identity for days, and Fitbits rotated with a name too generic to use. Strangers' AirPods rotated like phones.
+The category of gadget doesn't settle this. On real data a Galaxy Watch rotated every 39 minutes or so and could only be followed by its name, a WHOOP held one identity for days, and Fitbits rotated with a name too generic to use. Of 294 unnamed headphone identities, none lasted 2 hours.
 
 ### What can be matched between places
 
