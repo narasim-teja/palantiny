@@ -229,6 +229,8 @@ kbd {
 }
 .chip:hover { border-color: var(--ink); }
 .chip[aria-current="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.chip-more { font-family: var(--sans); color: var(--ink-2); border-color: transparent; background: none; }
+.chip-more:hover { color: var(--ink); border-color: var(--rule-strong); }
 
 /* Places */
 

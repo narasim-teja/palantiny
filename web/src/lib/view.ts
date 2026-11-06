@@ -20,6 +20,12 @@ export function placeName(place: PlaceView): string {
   return place.label ?? place.code;
 }
 
+/** Leads with what's around now, because a running device total mostly counts rotation. */
+export function placeSummary(place: PlaceView, inRange: number): string {
+  const networks = `${place.networkCount} ${place.networkCount === 1 ? "network" : "networks"}`;
+  return place.current ? `${inRange} in range, ${networks}` : networks;
+}
+
 export function findingFor(findings: Finding[], deviceId: number): Finding | undefined {
   return findings.find((finding) => finding.deviceId === deviceId);
 }

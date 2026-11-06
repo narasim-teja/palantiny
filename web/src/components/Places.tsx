@@ -1,14 +1,15 @@
 import { useState } from "react";
 import type { PlaceView } from "@core/types";
-import { ago } from "@/lib/view";
+import { ago, placeSummary } from "@/lib/view";
 
 interface Props {
   places: PlaceView[];
+  inRange: number;
   now: number;
   onRename: (placeId: number, label: string) => Promise<void>;
 }
 
-export function Places({ places, now, onRename }: Props) {
+export function Places({ places, inRange, now, onRename }: Props) {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
 
@@ -60,7 +61,7 @@ export function Places({ places, now, onRename }: Props) {
               Rename
             </button>
             <span className="quiet" style={{ gridColumn: "1 / -1" }}>
-              {place.deviceCount} devices, {place.networkCount} networks
+              {placeSummary(place, inRange)}
               {!place.current && `, ${ago(place.lastSeen, now)}`}
             </span>
           </li>

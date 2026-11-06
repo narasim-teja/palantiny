@@ -152,7 +152,7 @@ export function Console() {
           {snapshot ? (
             <>
               <Findings findings={snapshot.findings} places={snapshot.places} devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} />
-              <Places places={snapshot.places} now={snapshot.generatedAt} onRename={rename} />
+              <Places places={snapshot.places} inRange={inRange} now={snapshot.generatedAt} onRename={rename} />
               <Arrivals devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} now={snapshot.generatedAt} />
             </>
           ) : (

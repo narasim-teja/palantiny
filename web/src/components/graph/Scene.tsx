@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import * as THREE from "three";
 import { color } from "@/lib/tokens";
 import type { DeviceView, Finding, PlaceView, Severity } from "@core/types";
-import { deviceTitle, placeName, shapeFor, type Shape } from "@/lib/view";
+import { deviceTitle, placeName, placeSummary, shapeFor, type Shape } from "@/lib/view";
 
 const PLATE = 5.2;
 const SLAB = 0.16;
@@ -105,20 +105,18 @@ function squarePoints(): [number, number, number][] {
   ];
 }
 
-/** Corner brackets only, so an empty plate reads as a reserved spot and not an object. */
-function cornerPoints(): [number, number, number][] {
+const CORNER_SIGNS = [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const;
+
+/** One corner bracket, in plate coordinates. */
+function cornerPoints(sx: number, sz: number): [number, number, number][] {
   const arm = 1.1;
-  // The near corner is left out, because it would land on the plate below.
-  return ([[-1, -1], [1, -1], [-1, 1]] as const).flatMap(([sx, sz]) => {
-    const x = sx * PLATE;
-    const z = sz * PLATE;
-    return [
-      [x, 0, z],
-      [x - sx * arm, 0, z],
-      [x, 0, z],
-      [x, 0, z - sz * arm],
-    ] as [number, number, number][];
-  });
+  const x = sx * PLATE;
+  const z = sz * PLATE;
+  return [
+    [x - sx * arm, 0, z],
+    [x, 0, z],
+    [x, 0, z - sz * arm],
+  ];
 }
 
 function shadowTexture(): THREE.Texture {
@@ -169,11 +167,29 @@ function Plate({ place, y, opacity, grounded }: { place: PlaceView; y: number; o
   );
 }
 
+/** Corner brackets only, so an empty plate reads as a reserved spot and not an object. */
 function ReservedPlate({ y }: { y: number }) {
-  const corners = useMemo(cornerPoints, []);
+  const corners = useRef<(THREE.Group | null)[]>([]);
+  // The corner nearest the camera would land on the plate below, and which one that is
+  // changes as the graph orbits.
+  useFrame(({ camera }) => {
+    CORNER_SIGNS.forEach(([sx, sz], index) => {
+      const corner = corners.current[index];
+      if (corner) corner.visible = !(Math.sign(camera.position.x) === sx && Math.sign(camera.position.z) === sz);
+    });
+  });
   return (
     <group position={[0, y, 0]}>
-      <Line points={corners} segments color={color.ink3} lineWidth={1} />
+      {CORNER_SIGNS.map(([sx, sz], index) => (
+        <group
+          key={`${sx}${sz}`}
+          ref={(group) => {
+            corners.current[index] = group;
+          }}
+        >
+          <Line points={cornerPoints(sx, sz)} color={color.ink3} lineWidth={1} />
+        </group>
+      ))}
     </group>
   );
 }
@@ -370,7 +386,14 @@ function buildModel(places: PlaceView[], devices: DeviceView[], findings: Findin
   const offset = plates === 1 ? 1 : 0;
   const yByPlace = new Map(places.map((place, index) => [place.id, plateY(index + offset, slots)]));
   const severity = new Map(findings.map((finding) => [finding.deviceId, finding.severity]));
-  const labelled = new Set(findings.slice(0, MAX_FINDING_LABELS).map((finding) => finding.deviceId));
+  // A note about something that has left stays in the list, not on the graph.
+  const live = new Set(devices.filter((device) => device.live).map((device) => device.id));
+  const labelled = new Set(
+    findings
+      .filter((finding) => finding.severity !== "note" || live.has(finding.deviceId))
+      .slice(0, MAX_FINDING_LABELS)
+      .map((finding) => finding.deviceId),
+  );
 
   const items = devices.flatMap((device): Item[] => {
     const stops = device.presence.flatMap((presence) => {
@@ -390,7 +413,7 @@ function buildModel(places: PlaceView[], devices: DeviceView[], findings: Findin
   const lookY = plates === 1 ? plateY(1, 2) + 1.1 : -0.3;
   // How much further back the camera sits, on top of what one plate needs.
   const stack = plates === 1 ? GAP * 0.42 : (plates - 1) * GAP * 0.62;
-  return { plates, slots, offset, items, labelled, lookY, stack };
+  return { plates, slots, offset, items, labelled, lookY, stack, inRange: live.size };
 }
 
 type Model = ReturnType<typeof buildModel>;
@@ -455,8 +478,9 @@ function Graph({ places, model, selectedId, onSelect, onHover, film, reducedMoti
       {items.map(({ device, stops, x, z, level, mine, tone }) => {
         const selected = device.id === selectedId;
         const dimmed = selectedId !== null && !selected;
-        const opacity = dimmed ? 0.14 : device.live || level ? 1 : 0.5;
-        const size = level === "high" ? 0.16 : selected ? 0.14 : level ? 0.12 : 0.066;
+        const prominent = level !== undefined && (device.live || level !== "note");
+        const opacity = dimmed ? 0.14 : device.live || prominent ? 1 : 0.5;
+        const size = level === "high" ? 0.16 : selected ? 0.14 : prominent ? 0.12 : 0.066;
         const heads = stops.map((stop) => stop.head);
         const bottom = Math.min(...stops.map((stop) => stop.y));
         const top = Math.max(...heads);
@@ -527,16 +551,16 @@ interface Anchor {
 function buildAnchors(places: PlaceView[], model: Model, selectedId: number | null, hoverId: number | null): Anchor[] {
   const anchors: Anchor[] = places.map((place, index) => ({
     key: `plate-${place.id}`,
-    position: [-PLATE, plateY(index + model.offset, model.slots), PLATE],
+    position: [0, plateY(index + model.offset, model.slots), 0],
     text: placeName(place),
-    detail: `${place.deviceCount} devices, ${place.networkCount} networks`,
+    detail: placeSummary(place, model.inRange),
     kind: "plate",
     current: place.current,
   }));
   if (model.plates === 1) {
     anchors.push({
       key: "reserved",
-      position: [-PLATE, plateY(0, model.slots), PLATE],
+      position: [0, plateY(0, model.slots), 0],
       text: "Your next place",
       detail: "Anything that comes with you draws a line to here",
       kind: "plate",
@@ -577,6 +601,7 @@ function buildAnchors(places: PlaceView[], model: Model, selectedId: number | nu
 }
 
 const TAG_GAP = 3;
+const PLATE_CORNERS = [[-PLATE, -PLATE], [PLATE, -PLATE], [PLATE, PLATE], [-PLATE, PLATE]] as const;
 
 interface Box {
   left: number;
@@ -612,7 +637,14 @@ function Projector({ anchors, nodes }: { anchors: Anchor[]; nodes: Map<string, H
       node.style.visibility = "visible";
 
       if (anchor.kind === "plate") {
-        const left = Math.max(x - node.offsetWidth - 14, 10);
+        // Beside the plate's left edge, level with its centre. Both move smoothly as the
+        // graph orbits, so the label never lands on the plate or jumps between corners.
+        let edge = Infinity;
+        for (const [cornerX, cornerZ] of PLATE_CORNERS) {
+          point.set(cornerX, anchor.position[1], cornerZ).project(camera);
+          edge = Math.min(edge, ((point.x + 1) / 2) * size.width);
+        }
+        const left = Math.max(edge - node.offsetWidth - 16, 10);
         node.style.transform = `translate(${left}px, ${y - node.offsetHeight / 2}px)`;
         continue;
       }
