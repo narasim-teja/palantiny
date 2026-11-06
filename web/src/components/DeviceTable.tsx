@@ -1,8 +1,6 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { ShapeIcon } from "./ShapeIcon";
-import type { DeviceView, Finding } from "@/lib/types";
+import type { DeviceView, Finding } from "@core/types";
 import { ago, deviceTitle, findingFor, shapeFor } from "@/lib/view";
 
 type SortKey = "device" | "places" | "aliases" | "seen";

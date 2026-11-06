@@ -1,8 +1,5 @@
-"use client";
-
 import { AnimatePresence, MotionConfig } from "motion/react";
-import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Arrivals } from "./Arrivals";
 import { DeviceTable } from "./DeviceTable";
 import { Findings } from "./Findings";
@@ -14,10 +11,10 @@ import { Timeline } from "./Timeline";
 import { useDeviceDetail } from "@/hooks/useDeviceDetail";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSnapshot } from "@/hooks/useSnapshot";
-import type { ActionRequest } from "@/lib/types";
+import type { ActionRequest } from "@core/types";
 import { findingFor, statusLine, visiblePlaces } from "@/lib/view";
 
-const Scene = dynamic(() => import("./graph/Scene"), { ssr: false });
+const Scene = lazy(() => import("./graph/Scene"));
 
 type View = "graph" | "list";
 
@@ -43,7 +40,7 @@ function hasWebGL(): boolean {
 }
 
 async function postAction(request: ActionRequest): Promise<void> {
-  const response = await fetch("/api/actions", {
+  const response = await fetch("/v1/actions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
@@ -102,8 +99,8 @@ export function Console() {
     [act],
   );
 
-  const offline = !connected || snapshot?.status.collector === "offline";
-  const state = !connected ? "offline" : (snapshot?.status.collector ?? "stale");
+  const offline = !connected || snapshot?.status.sensor === "offline";
+  const state = !connected ? "offline" : (snapshot?.status.sensor ?? "stale");
   const here = places.find((place) => place.current);
   const inRange = snapshot?.devices.filter((candidate) => candidate.live).length ?? 0;
 
@@ -168,16 +165,18 @@ export function Console() {
 
         <div className="stage">
           {snapshot && places.length > 0 && view === "graph" && webgl && (
-            <Scene
-              places={places}
-              devices={snapshot.devices}
-              findings={snapshot.findings}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              film={film}
-              reducedMotion={reducedMotion}
-              inset={device && !film && wide ? INSPECTOR_WIDTH : 0}
-            />
+            <Suspense fallback={null}>
+              <Scene
+                places={places}
+                devices={snapshot.devices}
+                findings={snapshot.findings}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                film={film}
+                reducedMotion={reducedMotion}
+                inset={device && !film && wide ? INSPECTOR_WIDTH : 0}
+              />
+            </Suspense>
           )}
           {snapshot && places.length > 0 && view === "list" && (
             <DeviceTable

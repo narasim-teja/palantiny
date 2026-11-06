@@ -1,5 +1,5 @@
 // WebGL cannot read CSS variables, so the scene uses these sRGB equivalents of
-// the OKLCH tokens in globals.css. Keep the two in step.
+// the OKLCH tokens in styles.css. Keep the two in step.
 export const color = {
   surface: "#ffffff",
   ground: "#ebeef3",

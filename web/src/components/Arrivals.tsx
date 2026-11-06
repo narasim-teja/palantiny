@@ -1,8 +1,6 @@
-"use client";
-
 import { AnimatePresence, motion } from "motion/react";
 import { ShapeIcon } from "./ShapeIcon";
-import type { DeviceView } from "@/lib/types";
+import type { DeviceView } from "@core/types";
 import { arrivals, deviceTitle, shapeFor, shortAgo } from "@/lib/view";
 
 const LIMIT = 40;

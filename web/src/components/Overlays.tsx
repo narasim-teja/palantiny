@@ -1,5 +1,5 @@
 import { ShapeIcon } from "./ShapeIcon";
-import type { DeviceView, Finding, PlaceView, Snapshot } from "@/lib/types";
+import type { DeviceView, Finding, PlaceView, Snapshot } from "@core/types";
 import { filmCaption } from "@/lib/view";
 
 export function Ledger({ totals }: { totals: Snapshot["totals"] }) {

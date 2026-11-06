@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import type { DeviceDetail } from "@/lib/types";
+import type { DeviceDetail } from "@core/types";
 
 export function useDeviceDetail(deviceId: number | null, refreshKey: number) {
   const [detail, setDetail] = useState<DeviceDetail | null>(null);
@@ -11,7 +9,7 @@ export function useDeviceDetail(deviceId: number | null, refreshKey: number) {
       return;
     }
     const controller = new AbortController();
-    fetch(`/api/device/${deviceId}`, { signal: controller.signal })
+    fetch(`/v1/devices/${deviceId}`, { signal: controller.signal })
       .then((response) => response.json() as Promise<DeviceDetail>)
       .then(setDetail)
       .catch(() => {});

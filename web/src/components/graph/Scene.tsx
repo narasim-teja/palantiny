@@ -1,11 +1,9 @@
-"use client";
-
 import { Billboard, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { color } from "@/lib/tokens";
-import type { DeviceView, Finding, PlaceView, Severity } from "@/lib/types";
+import type { DeviceView, Finding, PlaceView, Severity } from "@core/types";
 import { deviceTitle, placeName, shapeFor, type Shape } from "@/lib/view";
 
 const PLATE = 5.2;

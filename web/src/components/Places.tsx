@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import type { PlaceView } from "@/lib/types";
+import type { PlaceView } from "@core/types";
 import { ago } from "@/lib/view";
 
 interface Props {

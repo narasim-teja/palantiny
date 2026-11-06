@@ -1,8 +1,6 @@
-"use client";
-
 import { AnimatePresence, motion } from "motion/react";
 import { ShapeIcon } from "./ShapeIcon";
-import type { DeviceView, Finding, PlaceView } from "@/lib/types";
+import type { DeviceView, Finding, PlaceView } from "@core/types";
 import { placeName, shapeFor } from "@/lib/view";
 
 const SEVERITY = { high: "High", medium: "Review", note: "Note" } as const;

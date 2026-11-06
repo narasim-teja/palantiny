@@ -1,4 +1,4 @@
-import type { Snapshot } from "@/lib/types";
+import type { Snapshot } from "@core/types";
 
 function line(value: string, ok: string, denied: string, waiting: string): string {
   if (value === "on" || value === "allowed") return ok;
@@ -9,11 +9,11 @@ function line(value: string, ok: string, denied: string, waiting: string): strin
 export function Setup({ snapshot }: { snapshot: Snapshot }) {
   const { status } = snapshot;
 
-  if (status.collector === "offline") {
+  if (status.sensor === "offline") {
     return (
       <div className="setup">
         <div className="setup-body">
-          <h2 className="setup-title">The collector isn't running</h2>
+          <h2 className="setup-title">The sensor isn't connected</h2>
           <p className="quiet">The console only shows what the sensor has heard. Start it from the project folder, then this page fills in on its own.</p>
           <p style={{ marginTop: 12 }}><code>bun run dev</code></p>
         </div>

@@ -1,9 +1,7 @@
-"use client";
-
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { ShapeIcon } from "./ShapeIcon";
-import type { ActionRequest, DeviceDetail, DeviceView, Finding, PlaceView, Snapshot } from "@/lib/types";
+import type { ActionRequest, DeviceDetail, DeviceView, Finding, PlaceView, Snapshot } from "@core/types";
 import { ago, deviceTitle, duration, placeName, shapeFor } from "@/lib/view";
 
 interface Props {

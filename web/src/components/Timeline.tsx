@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DeviceDetail, DeviceView, PlaceView, Visit } from "@/lib/types";
+import type { DeviceDetail, DeviceView, PlaceView, Visit } from "@core/types";
 import { clock, deviceTitle, placeName } from "@/lib/view";
 
 const LANE = 22;

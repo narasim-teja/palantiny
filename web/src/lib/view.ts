@@ -1,4 +1,4 @@
-import type { DeviceClass, DeviceView, Finding, PlaceView, Snapshot } from "./types";
+import type { DeviceClass, DeviceView, Finding, PlaceView, Snapshot } from "@core/types";
 
 export type Shape = "circle" | "square" | "diamond" | "triangle";
 
@@ -82,9 +82,9 @@ export function duration(minutes: number): string {
 }
 
 export function statusLine(snapshot: Snapshot): string {
-  const { collector, bluetooth, location, wifi } = snapshot.status;
-  if (collector === "offline") return "Collector offline";
-  if (collector === "stale") return "Collector not responding";
+  const { sensor, bluetooth, location, wifi } = snapshot.status;
+  if (sensor === "offline") return "Sensor offline";
+  if (sensor === "stale") return "Sensor not responding";
   if (bluetooth === "denied") return "Bluetooth permission needed";
   if (location === "denied") return "Location permission needed";
   if (bluetooth !== "on") return "Waiting for Bluetooth";
