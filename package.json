@@ -2,6 +2,7 @@
   "name": "palantiny",
   "version": "0.1.0",
   "description": "A local console that listens to public Bluetooth and Wi-Fi broadcasts around your Mac and models them as an ontology.",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "repository": {

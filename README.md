@@ -87,3 +87,7 @@ Be considerate with this. The people around you didn't opt in, so keep their dev
 Keyboard: `G` graph, `L` list, `F` film mode, `Esc` clear selection.
 
 Film mode hides the panels and controls, slowly orbits the graph and captions it with what is in range now.
+
+## License
+
+[MIT](LICENSE)
