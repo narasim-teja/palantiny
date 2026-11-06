@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import { applyAction, parseAction } from "./actions";
-import { buildDeviceDetail, buildSnapshot } from "./snapshot";
+import { buildDeviceDetail, buildSnapshot, searchDevices } from "./snapshot";
 
 const STREAM_INTERVAL_MS = 3_000;
 // Building a snapshot blocks this process, which is also reading the sensor, so clients share one.
@@ -68,6 +68,12 @@ export function createApp(db: Database, { webRoot, webOrigins = [] }: Options = 
         await stream.sleep(STREAM_INTERVAL_MS);
       }
     });
+  });
+
+  app.get("/v1/devices", (c) => {
+    const query = c.req.query("q")?.trim();
+    if (!query) return c.json({ total: 0, devices: [] });
+    return c.json(searchDevices(db, query, c.req.query("reveal") === "1"));
   });
 
   app.get("/v1/devices/:id", (c) => {

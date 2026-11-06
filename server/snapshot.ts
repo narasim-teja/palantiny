@@ -5,9 +5,11 @@ import { getMeta } from "./db";
 import { deriveFindings } from "@core/findings";
 import { lastReturn } from "@core/presence";
 import { isDistinctiveName, recognise } from "@core/recognise";
+import { matches } from "@core/search";
 import type {
   DeviceClass,
   DeviceDetail,
+  DeviceSearch,
   DeviceView,
   FindMyState,
   NetworkView,
@@ -25,6 +27,7 @@ const OFFLINE_AFTER_MS = 120_000;
 const VISIT_GAP_MINUTES = 10;
 const MAX_DEVICES = 160;
 const MAX_NETWORKS = 60;
+const MAX_SEARCH_RESULTS = 200;
 // A single address held this long has stopped being a rotation that hasn't happened yet.
 const STABLE_AFTER_MS = 2 * 3_600_000;
 
@@ -160,8 +163,7 @@ function relevance(device: DeviceView, flagged: Set<number>, now: number): numbe
 
 // Screenshot mode is enforced here, on the server, so a hidden name is never sent to
 // the browser and cannot leak through the page source or a stray tooltip.
-export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): Snapshot {
-  const currentPlaceId = Number(getMeta(db, "current_place") ?? 0);
+function readDevices(db: Database, reveal: boolean, now: number): DeviceView[] {
   const presence = readPresence(db);
 
   const rows = db
@@ -183,7 +185,7 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
     now,
   );
 
-  const all: DeviceView[] = rows.map((row) => {
+  return rows.map((row) => {
     const self = row.person_self === 1;
     // What a broadcast says it is beats what we could guess from its advert. A separated
     // Find My device keeps that label, because that's the more useful thing to know.
@@ -218,7 +220,19 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
       live: now - row.last_seen < LIVE_WINDOW_MS,
     };
   });
+}
 
+/** Searches every device, not just the ones a snapshot carries. */
+export function searchDevices(db: Database, query: string, reveal: boolean, now = Date.now()): DeviceSearch {
+  const found = readDevices(db, reveal, now)
+    .filter((device) => matches(device, query))
+    .sort((a, b) => Number(b.live) - Number(a.live) || b.lastSeen - a.lastSeen);
+  return { total: found.length, devices: found.slice(0, MAX_SEARCH_RESULTS) };
+}
+
+export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): Snapshot {
+  const currentPlaceId = Number(getMeta(db, "current_place") ?? 0);
+  const all = readDevices(db, reveal, now);
   const findings = deriveFindings(all);
   const flagged = new Set(findings.map((finding) => finding.deviceId));
   const devices = [...all]
