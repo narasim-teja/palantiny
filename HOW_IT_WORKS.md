@@ -33,7 +33,7 @@ Network -SEEN_AT->   Place      Wi-Fi networks are what define a Place
 
 The most important decision here is the split between **Device** and **Alias**. What you hear on the air is an alias, and a device is a claim that several aliases are one thing. Keeping them separate means every guess stays visible and can be questioned.
 
-There's only ever one Person: you. A stranger's device stays `DEV-0042`. palantiny doesn't try to work out who anyone is.
+A stranger's device stays a callsign like `Copper Heron`, which comes only from its row in the database. palantiny doesn't try to work out who anyone is. The only people in the ontology are you and anyone you add yourself, and each of them has a public name that replaces their real one on recordings.
 
 ## Places without GPS
 
@@ -61,12 +61,23 @@ Each link stores a confidence and its evidence, such as "Only matching advert to
 
 Links need an unbroken handover at one place, so a rotating phone can't be followed from one place to another.
 
+### Linking by name
+
+Some gadgets rotate their address but keep a serial in their name, like `Galaxy Watch Ultra (ABCD)`. `core/recognise.ts` treats a name as distinctive only if it carries something like that, because `LE-Bose QC35 II` is a model thousands of people own. Records with the same distinctive name merge into one device, and unlike timing, this works across places. On real data, one watch went from 18 records to 1.
+
+The same file turns names into safe labels, so a WHOOP shows as "WHOOP band" without its serial, even on recordings.
+
+### Stable, Rotating or New
+
+Every device says which it is. **Stable** means it has held one identity for at least 2 hours, or it's paired with your Mac, so it should match at other places. **Rotating** means it has changed identity. **New** means it's too soon to tell.
+
 ### What can be matched between places
 
 | Device | Why |
 |---|---|
 | Your paired devices | You own them |
 | Gadgets with a fixed address | Fitness bands, earbuds, TVs and smart-home gadgets often never rotate, so their UUID stays the same |
+| Gadgets with a serial in their name | The address rotates, but the name gives them away |
 | Separated Find My devices | They broadcast a key that holds for a while |
 | Most phones | **Can't be matched.** That's what rotation is for |
 
@@ -87,6 +98,7 @@ Apple manufacturer data carries a series of typed messages, and type `0x12` is [
 | Tracker or separated device at 2+ places | High |
 | Any other unclaimed device at 2+ places | Review |
 | Tracker or separated device at 1 place, while in range or after 60 minutes there | Note |
+| A device you tagged to someone else, at 2+ places | Note |
 
 ## Plugging in
 
@@ -122,9 +134,9 @@ The web console only uses this API, so a native app can do everything it does.
 | `GET /v1/snapshot` | The ontology as JSON |
 | `GET /v1/stream` | The same as server-sent events, every 3 seconds |
 | `GET /v1/devices/:id` | Aliases, sightings and log for one device |
-| `POST /v1/actions` | `claim`, `trust`, `watch`, `rename-place` and their opposites |
+| `POST /v1/actions` | `claim`, `assign`, `name-device`, `trust`, `watch`, `rename-place` and their opposites |
 
-Names are removed unless you add `?reveal=1`. The response types are in `core/types.ts`.
+Broadcast names and people's real names are removed unless you add `?reveal=1`. The response types are in `core/types.ts`.
 
 The API is loopback only, and it refuses other hosts and web origins. That means a native app on the same Mac works as it is. A phone app is different, because it would have to reach the Mac over a network, which exposes people's device names. That needs authentication first, and it doesn't exist yet.
 

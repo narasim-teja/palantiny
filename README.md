@@ -49,14 +49,20 @@ Both are documented in [How it works](HOW_IT_WORKS.md#plugging-in).
 
 | Object | What it is |
 |---|---|
-| Person | You. Strangers are never given an identity. |
-| Device | One piece of hardware, as best we can tell |
+| Person | You, plus anyone you choose to add. Strangers are never given an identity. |
+| Device | One piece of hardware, as best we can tell. Each gets a callsign like `Copper Heron` |
 | Alias | One rotating Bluetooth identity of a device |
 | Sighting | An alias heard at a place during a given minute |
 | Place | Recognised from nearby Wi-Fi, with no GPS |
 | Network | A Wi-Fi network seen at a place |
 
-Actions are Claim as mine, Mark trusted, Watch and Rename place. Each one is logged.
+Actions are Mine, Add person, Name, Trust, Watch and Rename place. Each one is logged.
+
+## Tagging devices
+
+Select a device and press `M` to claim it, then type a name. To tag someone you know, turn off Screenshot mode, because that's where names appear, and use **Add person**. Each person has a real name and a public name, so they can be "Priya" to you and "Roommate" on a recording.
+
+Only devices you've tied to someone can be named. Everything else keeps its callsign.
 
 For the full story, including what we measured and the research behind it, read [How it works](HOW_IT_WORKS.md).
 
@@ -65,19 +71,19 @@ For the full story, including what we measured and the research behind it, read 
 - **"In range" is the honest count.** The Device total keeps growing, because passers-by and rotated addresses that couldn't be linked each add a row. Quote the in-range number.
 - **Your own devices show up first.** They follow you everywhere, so claim them.
 - **Addresses rotate.** Linking aliases is inference. Dashed lines and confidence scores mark every guess, and any doubt means no link.
-- **Most phones can't be matched between places.** Gadgets with a fixed address can, and separated Find My devices can for a while.
+- **Most phones can't be matched between places.** Gadgets with a fixed address or a serial in their name can, and separated Find My devices can for a while. Each device is labelled Stable, Rotating or New so you can tell which is which.
 - **A separated Find My device is not proof of anything.** It may be a neighbour's lost keys, or someone you're travelling with. This is a side project, not a safety tool. If you think you're being tracked, use your phone's built-in tracker alerts and contact the police.
 
 ## Privacy defaults
 
-- Screenshot mode is on at every page load. Names are removed on the server, so they never reach the browser.
+- Screenshot mode is on at every page load. Broadcast names and people's real names are removed on the server, so they never reach the browser.
 - BSSIDs are stored only as salted hashes.
 - Strangers' sightings are deleted after 30 days.
 - Listening only: no connecting to devices and no packet capture.
 - The sensor exits when the server stops, so nothing keeps scanning in the background.
 - `data/` is gitignored, because it holds nearby devices' names. Don't share it.
 
-Be considerate with this. The people around you didn't opt in, so keep their devices pseudonymous and don't use it to follow anyone.
+Be considerate with this. The people around you didn't opt in, so keep strangers' devices pseudonymous and don't use it to follow anyone. If you tag someone you know, tell them.
 
 ## Commands
 
@@ -90,7 +96,7 @@ Be considerate with this. The people around you didn't opt in, so keep their dev
 | `bun run fixture` | Builds `data/fixture.db`, labelled test data for layout work |
 | `PALANTINY_DB=data/fixture.db PALANTINY_SENSOR=off bun run server` | Serves the built console on that test data |
 
-Keyboard: `G` graph, `L` list, `F` film mode, `Esc` clear selection.
+Keyboard: `G` graph, `L` list, `F` film mode, `Esc` clear selection. With a device selected: `M` mine, `N` name, `T` trust, `W` watch.
 
 Film mode hides the panels and controls, slowly orbits the graph and captions it with what is in range now.
 
