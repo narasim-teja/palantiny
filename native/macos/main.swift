@@ -1,8 +1,8 @@
 // palantiny sensor: passively listens to public Bluetooth LE and Wi-Fi broadcasts and
-// streams them as JSON lines over a Unix socket to the collector.
+// streams them as JSON lines over a Unix socket to the server.
 //
 // It never connects to a device and never captures traffic. It stores nothing itself,
-// and exits as soon as the collector goes away so nothing is left scanning.
+// and exits as soon as the server goes away so nothing is left scanning.
 
 import AppKit
 import CoreBluetooth
@@ -47,7 +47,7 @@ final class Output {
     }
   }
 
-  // The collector never writes back, so a readable socket means it has closed.
+  // The server never writes back, so a readable socket means it has closed.
   private func watchForClose() {
     let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
     source.setEventHandler { exit(0) }
@@ -195,7 +195,7 @@ let args = CommandLine.arguments
 guard let flag = args.firstIndex(of: "--socket"), flag + 1 < args.count,
   let out = Output(path: args[flag + 1])
 else {
-  FileHandle.standardError.write(Data("sensor: could not reach collector socket\n".utf8))
+  FileHandle.standardError.write(Data("sensor: could not reach server socket\n".utf8))
   exit(1)
 }
 
