@@ -7,7 +7,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/narasim-teja/Palantiny.git"
+    "url": "https://github.com/narasim-teja/palantiny.git"
   },
   "scripts": {
     "dev": "bun run scripts/dev.ts",

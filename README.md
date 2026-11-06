@@ -24,8 +24,8 @@ palantiny listens to the Bluetooth and Wi-Fi broadcasts around your Mac, builds 
 You need macOS 14 or later, [Bun](https://bun.sh) and the Xcode command line tools (`xcode-select --install`).
 
 ```sh
-git clone https://github.com/narasim-teja/Palantiny.git
-cd Palantiny
+git clone https://github.com/narasim-teja/palantiny.git
+cd palantiny
 bun install
 bun run dev
 ```
