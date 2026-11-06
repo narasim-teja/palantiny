@@ -8,6 +8,8 @@ import { decidePlace, placeCode } from "../core/places";
 import { buildSnapshot } from "../server/snapshot";
 import type { DeviceView, Finding } from "../core/types";
 import { callsign } from "../core/callsign";
+import { lastReturn } from "../core/presence";
+import { unseen } from "../server/alerts";
 import { isDistinctiveName, recognise } from "../core/recognise";
 import { applyOptimistic } from "../web/src/lib/optimistic";
 import { filmCaption, placeSummary } from "../web/src/lib/view";
@@ -135,6 +137,8 @@ describe("findings", () => {
     stability: "new",
     trusted: false,
     watched: false,
+    watchedAt: null,
+    back: null,
     paired: false,
     firstSeen: 0,
     lastSeen: 0,
@@ -145,7 +149,7 @@ describe("findings", () => {
     ...over,
   });
   const at = (...ids: number[]) =>
-    ids.map((placeId) => ({ placeId, minutes: 5, bestRssi: -50, lastSeen: 0 }));
+    ids.map((placeId) => ({ placeId, firstSeen: 0, minutes: 5, bestRssi: -50, lastSeen: 0 }));
 
   test("a separated tag at two places is the top finding", () => {
     const [first] = deriveFindings([
@@ -173,7 +177,7 @@ describe("findings", () => {
   });
 
   test("a brief pass does not count as being at a place", () => {
-    const presence = [...at(1), { placeId: 2, minutes: 1, bestRssi: -80, lastSeen: 0 }];
+    const presence = [...at(1), { placeId: 2, firstSeen: 0, minutes: 1, bestRssi: -80, lastSeen: 0 }];
     expect(deriveFindings([device({ presence })])).toEqual([]);
   });
 
@@ -320,7 +324,7 @@ describe("separated devices at one place", () => {
       aliasCount: 1,
       identityConfidence: 1,
       live,
-      presence: [{ placeId: 1, minutes, bestRssi: -80, lastSeen: 0 }],
+      presence: [{ placeId: 1, firstSeen: 0, minutes, bestRssi: -80, lastSeen: 0 }],
     }) as unknown as DeviceView;
 
   test("earn a note while in range", () => {
@@ -411,5 +415,86 @@ describe("optimistic updates", () => {
 
   test("leave other devices alone", () => {
     expect(applyOptimistic(snapshot, { action: "claim", deviceId: 2 }).devices[0]?.owner).toBeNull();
+  });
+});
+
+describe("watching a device", () => {
+  const watched = (over: Partial<DeviceView>) =>
+    ({
+      id: 7,
+      code: "Copper Heron",
+      class: "wearable",
+      classLabel: "WHOOP band",
+      label: null,
+      owner: null,
+      trusted: false,
+      watched: true,
+      watchedAt: 1_000,
+      back: null,
+      aliasCount: 1,
+      identityConfidence: 1,
+      live: true,
+      presence: [],
+      ...over,
+    }) as unknown as DeviceView;
+  const at = (placeId: number, firstSeen: number, minutes = 5) => ({ placeId, firstSeen, minutes, bestRssi: -70, lastSeen: 0 });
+
+  test("is serious when a stranger turns up somewhere new", () => {
+    const [finding] = deriveFindings([watched({ presence: [at(1, 0), at(2, 2_000)] })]);
+    expect(finding?.id).toBe("watch-place-7-2");
+    expect(finding?.severity).toBe("high");
+    expect(finding?.title).toBe("Copper Heron turned up at a new place");
+  });
+
+  test("is only worth a review for someone you know", () => {
+    const owner = { code: "P", label: "Roommate", self: false };
+    const [finding] = deriveFindings([watched({ owner, presence: [at(1, 2_000)] })]);
+    expect(finding?.severity).toBe("medium");
+  });
+
+  test("ignores places it was already at, and passing blips", () => {
+    expect(deriveFindings([watched({ presence: [at(1, 0)] })])).toEqual([]);
+    expect(deriveFindings([watched({ presence: [at(2, 2_000, 1)] })])).toEqual([]);
+  });
+
+  test("mentions a long absence ending", () => {
+    const [finding] = deriveFindings([watched({ back: { after: 180, at: 5_000 } })]);
+    expect(finding?.severity).toBe("note");
+    expect(finding?.title).toBe("Copper Heron is back after 3 hours");
+  });
+
+  test("stays quiet for your own and trusted devices", () => {
+    const owner = { code: "YOU", label: "You", self: true };
+    expect(deriveFindings([watched({ owner, presence: [at(2, 2_000)] })])).toEqual([]);
+    expect(deriveFindings([watched({ trusted: true, presence: [at(2, 2_000)] })])).toEqual([]);
+  });
+});
+
+describe("absence", () => {
+  const listening = Array.from({ length: 400 }, (_, minute) => minute);
+
+  test("is measured in minutes the Mac was listening", () => {
+    expect(lastReturn([0, 300], listening, 305)).toEqual({ after: 299, at: 300 });
+  });
+
+  test("doesn't count the Mac being asleep", () => {
+    // Heard either side of a night with the lid closed, with no listening in between.
+    expect(lastReturn([10, 900], [8, 9, 10, 900, 901], 901)).toBeNull();
+  });
+
+  test("ignores short gaps and old returns", () => {
+    expect(lastReturn([0, 60], listening, 60)).toBeNull();
+    expect(lastReturn([0, 300], listening, 399)).toBeNull();
+  });
+});
+
+describe("alerts", () => {
+  const finding = (id: string, severity: Finding["severity"]) =>
+    ({ id, severity, deviceId: 1, deviceCode: "C", title: "t", detail: "", placeIds: [], confidence: 1, observed: true }) as Finding;
+
+  test("interrupt only for serious or watched findings, once each", () => {
+    const list = [finding("tag-multi-1", "high"), finding("watch-back-2-9", "note"), finding("tag-single-3", "note")];
+    expect(unseen(list, new Set()).map((f) => f.id)).toEqual(["tag-multi-1", "watch-back-2-9"]);
+    expect(unseen(list, new Set(["tag-multi-1"])).map((f) => f.id)).toEqual(["watch-back-2-9"]);
   });
 });

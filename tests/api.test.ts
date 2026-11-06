@@ -162,3 +162,32 @@ describe("people and names", () => {
     expect(db.query("SELECT COUNT(*) AS n FROM people").get()).toEqual({ n: 1 });
   });
 });
+
+describe("watching end to end", () => {
+  test("a watched device heard at a new place raises a high finding", async () => {
+    const db = openDb(":memory:");
+    const app = createApp(db);
+    const now = Date.now();
+    const minute = Math.floor(now / 60_000);
+    db.run("INSERT INTO places (id, code, first_seen, last_seen) VALUES (1, 'PLACE-A', 1, 1), (2, 'PLACE-B', 1, 1)");
+    db.query("INSERT INTO devices (id, class, first_seen, last_seen) VALUES (1, 'wearable', ?, ?)").run(now - 600_000, now);
+    db.query("INSERT INTO aliases (id, device_id, place_id, signature, first_seen, last_seen) VALUES ('a', 1, 1, 's', ?, ?)").run(now - 600_000, now);
+    const sight = db.query("INSERT INTO sightings (alias_id, place_id, minute, n) VALUES ('a', ?, ?, 1)");
+    for (let i = 10; i > 6; i -= 1) sight.run(1, minute - i);
+
+    await app.request("/v1/actions", {
+      method: "POST",
+      headers: { ...LOCAL, "content-type": "application/json" },
+      body: JSON.stringify({ action: "watch", deviceId: 1 }),
+    });
+    const read = async () =>
+      (await (await app.request("/v1/snapshot", { headers: LOCAL })).json()) as Snapshot;
+    expect((await read()).findings).toEqual([]);
+
+    for (let i = 0; i < 3; i += 1) sight.run(2, minute + 1 + i);
+    await Bun.sleep(1_050); // Outlast the shared snapshot.
+    const [finding] = (await read()).findings;
+    expect(finding?.severity).toBe("high");
+    expect(finding?.id).toBe("watch-place-1-2");
+  });
+});
