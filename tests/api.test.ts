@@ -104,3 +104,57 @@ describe("sensor format", () => {
     }
   });
 });
+
+describe("people and names", () => {
+  let db: Database;
+  let app: ReturnType<typeof createApp>;
+  const post = (body: unknown) =>
+    app.request("/v1/actions", {
+      method: "POST",
+      headers: { ...LOCAL, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const read = async (reveal: boolean) =>
+    (await (await app.request(`/v1/snapshot${reveal ? "?reveal=1" : ""}`, { headers: LOCAL })).json()) as Snapshot;
+
+  beforeEach(() => {
+    db = openDb(":memory:");
+    app = createApp(db);
+    db.run("INSERT INTO devices (id, class, first_seen, last_seen) VALUES (1, 'wearable', 1, 2)");
+  });
+
+  test("a stranger's device can't be named", async () => {
+    await post({ action: "name-device", deviceId: 1, label: "Their watch" });
+    expect((await read(true)).devices[0]?.label).toBeNull();
+  });
+
+  test("your own names always show", async () => {
+    await post({ action: "claim", deviceId: 1 });
+    await post({ action: "name-device", deviceId: 1, label: "My WHOOP" });
+    expect((await read(false)).devices[0]?.label).toBe("My WHOOP");
+  });
+
+  test("a recording only ever gets someone's public name", async () => {
+    await post({ action: "assign", deviceId: 1, person: "Priya Sharma", publicLabel: "Roommate" });
+    await post({ action: "name-device", deviceId: 1, label: "Priya's WHOOP" });
+    const safe = await read(false);
+    expect(JSON.stringify(safe)).not.toContain("Priya");
+    expect(safe.devices[0]?.owner?.label).toBe("Roommate");
+    expect(safe.people).toEqual([]);
+    const full = await read(true);
+    expect(full.devices[0]?.owner?.label).toBe("Priya Sharma");
+    expect(full.people[0]?.publicLabel).toBe("Roommate");
+  });
+
+  test("without a public name, a recording shows no name at all", async () => {
+    await post({ action: "assign", deviceId: 1, person: "Priya Sharma" });
+    expect((await read(false)).devices[0]?.owner?.label).toBeNull();
+  });
+
+  test("a person with no devices left is forgotten", async () => {
+    await post({ action: "assign", deviceId: 1, person: "Priya Sharma" });
+    await post({ action: "unclaim", deviceId: 1 });
+    expect((await read(true)).people).toEqual([]);
+    expect(db.query("SELECT COUNT(*) AS n FROM people").get()).toEqual({ n: 1 });
+  });
+});

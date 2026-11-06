@@ -7,6 +7,9 @@ import { inferLink, type AliasFacts } from "../core/inference";
 import { decidePlace, placeCode } from "../core/places";
 import { buildSnapshot } from "../server/snapshot";
 import type { DeviceView, Finding } from "../core/types";
+import { callsign } from "../core/callsign";
+import { isDistinctiveName, recognise } from "../core/recognise";
+import { applyOptimistic } from "../web/src/lib/optimistic";
 import { filmCaption, placeSummary } from "../web/src/lib/view";
 import { Ingest } from "../server/ingest";
 
@@ -127,7 +130,9 @@ describe("findings", () => {
     findMy: null,
     name: null,
     hasName: false,
+    label: null,
     owner: null,
+    stability: "new",
     trusted: false,
     watched: false,
     paired: false,
@@ -337,5 +342,74 @@ describe("place summary", () => {
   test("leads with what's in range, never the running total", () => {
     expect(placeSummary(place, 60)).toBe("60 in range, 3 networks");
     expect(placeSummary({ ...place, current: false, networkCount: 1 }, 60)).toBe("1 network");
+  });
+});
+
+describe("callsigns", () => {
+  test("are fixed and don't repeat within a cycle", () => {
+    expect(callsign(42)).toBe(callsign(42));
+    const seen = new Set(Array.from({ length: 16_384 }, (_, id) => callsign(id)));
+    expect(seen.size).toBe(16_384);
+  });
+
+  test("stay unique after the word pairs run out", () => {
+    expect(callsign(16_384)).not.toBe(callsign(0));
+  });
+});
+
+describe("recognising broadcast names", () => {
+  test("keeps the type and drops the serial", () => {
+    expect(recognise("WHOOP 5A00000000")).toEqual({ kind: "WHOOP band", class: "wearable" });
+    expect(recognise("Galaxy Watch Ultra (ABCD)")?.kind).toBe("Galaxy Watch");
+    expect(recognise('55" Crystal UHD')?.kind).toBe("TV");
+    expect(recognise("mystery")).toBeNull();
+    expect(recognise(null)).toBeNull();
+  });
+
+  test("only trusts names that point at one physical device", () => {
+    expect(isDistinctiveName("Galaxy Watch Ultra (ABCD)")).toBe(true);
+    expect(isDistinctiveName("WHOOP 5A00000000")).toBe(true);
+    expect(isDistinctiveName("LE-Bose QC35 II")).toBe(false);
+    expect(isDistinctiveName("Google Fitbit Air")).toBe(false);
+    expect(isDistinctiveName("4")).toBe(false);
+  });
+});
+
+describe("merging by name", () => {
+  test("joins a rotating gadget's records and keeps your claim", () => {
+    const db = openDb(":memory:");
+    const ingest = new Ingest(db);
+    db.run("INSERT INTO places (id, code, first_seen, last_seen) VALUES (1, 'PLACE-A', 1, 1)");
+    const name = "Galaxy Watch Ultra (ABCD)";
+    db.query("INSERT INTO devices (id, class, name, first_seen, last_seen) VALUES (1, 'unknown', ?, 10, 20)").run(name);
+    db.query("INSERT INTO devices (id, class, name, person_id, first_seen, last_seen) VALUES (2, 'unknown', ?, 1, 5, 30)").run(name);
+    db.run("INSERT INTO devices (id, class, name, first_seen, last_seen) VALUES (3, 'unknown', 'LE-Bose QC35 II', 1, 1)");
+    db.run("INSERT INTO devices (id, class, name, first_seen, last_seen) VALUES (4, 'unknown', 'LE-Bose QC35 II', 1, 1)");
+    for (const [alias, device] of [["a", 1], ["b", 2]] as const) {
+      db.query("INSERT INTO aliases (id, device_id, place_id, signature, first_seen, last_seen) VALUES (?, ?, 1, 's', 1, 1)").run(alias, device);
+    }
+
+    expect(ingest.mergeByName()).toBe(1);
+    const rows = db.query("SELECT id, person_id AS personId, first_seen AS firstSeen, last_seen AS lastSeen FROM devices WHERE name = ?").all(name);
+    expect(rows).toEqual([{ id: 2, personId: 1, firstSeen: 5, lastSeen: 30 }]);
+    expect(db.query("SELECT COUNT(*) AS n FROM aliases WHERE device_id = 2").get()).toEqual({ n: 2 });
+    expect(db.query("SELECT COUNT(*) AS n FROM devices WHERE name = 'LE-Bose QC35 II'").get()).toEqual({ n: 2 });
+  });
+});
+
+describe("optimistic updates", () => {
+  const snapshot = {
+    places: [],
+    devices: [{ id: 1, owner: null, label: null, trusted: false, watched: false }],
+  } as unknown as Parameters<typeof applyOptimistic>[0];
+
+  test("show the result of an action straight away", () => {
+    expect(applyOptimistic(snapshot, { action: "claim", deviceId: 1 }).devices[0]?.owner?.self).toBe(true);
+    expect(applyOptimistic(snapshot, { action: "assign", deviceId: 1, person: " Sam " }).devices[0]?.owner?.label).toBe("Sam");
+    expect(applyOptimistic(snapshot, { action: "trust", deviceId: 1 }).devices[0]?.trusted).toBe(true);
+  });
+
+  test("leave other devices alone", () => {
+    expect(applyOptimistic(snapshot, { action: "claim", deviceId: 2 }).devices[0]?.owner).toBeNull();
   });
 });
