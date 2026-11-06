@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules
+.next
+next-env.d.ts
+*.tsbuildinfo
+sensor/build/
+
+# Everything the sensor hears. Never commit this: it holds nearby devices' names.
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Private notes
+docs/
+PRODUCT.md
+
+# Local tooling and secrets
+.env*
+.impeccable/
+.claude/
+.cursor/
+*.log
+.DS_Store
