@@ -3,10 +3,18 @@ import type { DeviceView, Finding } from "./types";
 // A place only counts after a few minutes, so one stray advert is not a sighting.
 export const MIN_MINUTES_AT_PLACE = 3;
 
+// Separated devices pass by constantly, so one place only earns a note while it's in
+// range or if it lingered. Otherwise a busy building fills the list with noise.
+export const LINGER_MINUTES = 60;
+
 const SEVERITY_RANK = { high: 0, medium: 1, note: 2 } as const;
 
 function placesCounted(device: DeviceView): number[] {
   return device.presence.filter((p) => p.minutes >= MIN_MINUTES_AT_PLACE).map((p) => p.placeId);
+}
+
+function lingered(device: DeviceView): boolean {
+  return device.presence.some((p) => p.minutes >= LINGER_MINUTES);
 }
 
 export function deriveFindings(devices: DeviceView[]): Finding[] {
@@ -46,7 +54,7 @@ export function deriveFindings(devices: DeviceView[]): Finding[] {
         title: `${device.classLabel} seen at ${placeIds.length} places`,
         detail: `${how} Your own devices show up here first, so claim it if it's yours.`,
       });
-    } else if (tracker && placeIds.length === 1) {
+    } else if (tracker && placeIds.length === 1 && (device.live || lingered(device))) {
       findings.push({
         ...base,
         id: `tag-single-${device.id}`,
