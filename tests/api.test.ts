@@ -191,3 +191,51 @@ describe("watching end to end", () => {
     expect(finding?.id).toBe("watch-place-1-2");
   });
 });
+
+describe("search", () => {
+  let db: Database;
+  let app: ReturnType<typeof createApp>;
+  const find = async (query: string, reveal = false) =>
+    (await (
+      await app.request(`/v1/devices?q=${encodeURIComponent(query)}${reveal ? "&reveal=1" : ""}`, { headers: LOCAL })
+    ).json()) as { total: number; devices: { id: number }[] };
+
+  beforeEach(() => {
+    db = openDb(":memory:");
+    app = createApp(db);
+    db.run("INSERT INTO people (id, code, label, public_label, self) VALUES (2, 'P', 'Priya Sharma', 'Roommate', 0)");
+    db.run(`INSERT INTO devices (id, class, name, label, person_id, first_seen, last_seen)
+            VALUES (1, 'wearable', 'WHOOP 5A00000000', 'Priya band', 2, 1, 2)`);
+    db.run("INSERT INTO devices (id, class, vendor, first_seen, last_seen) VALUES (2, 'unknown', 'Samsung', 1, 2)");
+  });
+
+  test("finds by type, vendor, public name and identity", async () => {
+    expect((await find("whoop")).devices.map((d) => d.id)).toEqual([1]);
+    expect((await find("samsung")).devices.map((d) => d.id)).toEqual([2]);
+    expect((await find("roommate")).devices.map((d) => d.id)).toEqual([1]);
+  });
+
+  test("needs every word to match", async () => {
+    expect((await find("whoop roommate")).total).toBe(1);
+    expect((await find("whoop samsung")).total).toBe(0);
+  });
+
+  test("can't discover a hidden name in screenshot mode", async () => {
+    expect((await find("priya")).total).toBe(0);
+    expect((await find("5A00000000")).total).toBe(0);
+    expect((await find("priya", true)).total).toBe(1);
+    expect((await find("5A00000000", true)).total).toBe(1);
+  });
+
+  test("reaches past what a snapshot carries", async () => {
+    const insert = db.query("INSERT INTO devices (class, first_seen, last_seen) VALUES ('unknown', 1, 2)");
+    for (let i = 0; i < 300; i += 1) insert.run();
+    const { total, devices } = await find("unidentified");
+    expect(total).toBeGreaterThan(200);
+    expect(devices.length).toBe(200);
+  });
+
+  test("an empty search returns nothing", async () => {
+    expect(await find("   ")).toEqual({ total: 0, devices: [] });
+  });
+});
