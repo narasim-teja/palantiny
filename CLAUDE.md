@@ -11,6 +11,7 @@ palantiny listens to public Bluetooth and Wi-Fi broadcasts on a Mac, models them
 ```sh
 bun run dev                     # sensor, server (4118) and Vite (4117) together
 bun test                        # everything
+bun run replay                  # score links and silence on recorded data (read only)
 bun test tests/api.test.ts      # one file
 bun test -t "public name"       # tests matching a name
 bun run typecheck
@@ -37,13 +38,29 @@ native/macos  ->  Unix socket  ->  server/         ->  HTTP + SSE  ->  web/
 - `web/` only ever talks to `/v1`, so any other client can do what it does.
 - The two seams are the sensor format (`core/events.ts`) and the `/v1` API. Keep them stable, and document changes in HOW_IT_WORKS.md.
 
-The core model: an **Alias** is one identity heard on the air, and a **Device** is a claim that several aliases are one thing. Aliases merge into devices through timing (`core/inference.ts`, `Ingest.linkAliases`), a shared key, or a distinctive name (`core/recognise.ts`, `Ingest.mergeByName`).
+The core model: an **Alias** is one identity heard on the air, and a **Device** is a claim that several aliases are one thing. Aliases merge into devices through timing (`core/inference.ts`, `Ingest.linkAliases`), a shared key, or a distinctive name (`core/recognise.ts`, `Ingest.mergeByName`). `Ingest.retractLinks` undoes timing links that later evidence disproves.
+
+The brain sits on top of that, built from `DeviceView` so privacy carries through: `core/person.ts` reads people from their devices, `core/exposure.ts` reads what your own devices give away, `core/moves.ts` counts trips a device made with you, `core/air.ts` counts what's live, `core/closer.ts` finds a signal that just jumped, `core/twins.ts` finds signals moving with your own devices, `core/together.ts` finds what went silent with them, and `core/moved.ts` spots the Mac itself moving. `bun run replay` scores links and the silence rule on recorded data.
+
+## How to change code
+
+Fix the root cause, even if that means redesigning something or adding files and abstractions. No patch work: no special cases, bolted-on flags, duplicated logic, swallowed errors, or tests edited just to make them pass. When something doesn't fit, change the design that allowed it.
+
+Measure before you build. Try an idea on recorded data first, and record what failed as well as what worked.
 
 ## Rules that aren't obvious from one file
 
 **Privacy is enforced on the server.** `readDevices` in `server/snapshot.ts` strips names unless `reveal` is set, and everything else derives from that view. Search and notifications both use it, so hidden names can't be found or shown. Never query name columns directly for something a client sees. In screenshot mode, other people appear only under their public name.
 
 **Strangers stay pseudonymous.** Only devices tied to a person can be named. Don't add anything that works out who a stranger is, or that fingerprints phones through address rotation.
+
+**Only your own devices are a reference.** `core/twins.ts` and `core/together.ts` compare everything against what you own, never strangers against each other, because that would group their devices.
+
+**No routines for other people.** Person presence answers "is this near the Mac now?". Schedules and patterns are only ever worked out for you (`core/exposure.ts`).
+
+**Say what the evidence supports.** A rotating device's silence is "can't say", never "gone". A paired device's stability is the Mac's view, not a stranger's, because the Mac holds its key. Rule scores on links aren't accuracies, so don't show them as percentages.
+
+**Control for the Mac itself.** It sleeps, and everything goes quiet with it, so any two signals look correlated. Compare only minutes it was properly listening. A 0.61 correlation fell to 0.00 this way.
 
 **Listen only.** The sensor must never connect to a device.
 

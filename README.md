@@ -81,7 +81,7 @@ This is what a device at three places looks like. It's labelled test data, becau
 - **Quote "in range", not the Device total.** The total keeps growing, because rotated addresses and passers-by each add a row. In range held at about 60 to 100 in one apartment while the total passed 5,000.
 - **Your own devices show up first.** They go everywhere you go, so claim them.
 - **A separated Find My device isn't proof of anything.** It could be a neighbour's keys, or someone you're with.
-- **Dashed lines are guesses.** Linking rotating addresses is inference, and each link shows its confidence and evidence.
+- **Dashed lines are guesses.** Linking rotating addresses is inference, so each link shows its evidence, and links that later evidence disproves are taken back.
 
 **If you think you're being tracked, use your phone's built-in tracker alerts and contact the police.** Don't rely on this.
 
