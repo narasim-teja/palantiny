@@ -1,3 +1,4 @@
+import { couldBeTracker, isAirTagLike } from "./air";
 import type { DeviceView, Finding } from "./types";
 
 // A place only counts after a few minutes, so one stray advert is not a sighting.
@@ -18,8 +19,22 @@ function absence(minutes: number): string {
   return hours === 1 ? "an hour" : `${hours} hours`;
 }
 
+/** The strongest evidence there is, so it leads whenever it exists. */
+function trips(device: DeviceView): string {
+  const { cameAlong } = device;
+  if (!cameAlong || cameAlong.of === 0) return "";
+  if (cameAlong.trips === 0) return " It never left or arrived with this Mac.";
+  return ` It came along on ${cameAlong.trips} of ${cameAlong.of} ${cameAlong.of === 1 ? "trip" : "trips"}.`;
+}
+
 function lingered(device: DeviceView): boolean {
   return device.presence.some((p) => p.minutes >= LINGER_MINUTES);
+}
+
+function tagLabel(device: DeviceView): string {
+  if (isAirTagLike(device.findMyType)) return "AirTag-like device";
+  if (device.findMyType === 0) return "Separated Apple device";
+  return device.findMy === "separated" ? "Separated Find My device" : "Possible tracker tag";
 }
 
 export function deriveFindings(devices: DeviceView[]): Finding[] {
@@ -30,6 +45,38 @@ export function deriveFindings(devices: DeviceView[]): Finding[] {
 
     const placeIds = placesCounted(device);
     const name = device.label ?? device.code;
+
+    if (device.leftWith && couldBeTracker(device)) {
+      findings.push({
+        id: `left-${device.id}-${device.leftWith.at}`,
+        severity: device.owner ? "note" : "medium",
+        deviceId: device.id,
+        deviceCode: device.code,
+        placeIds,
+        confidence: device.identityConfidence,
+        observed: device.identityConfidence >= 1,
+        title: `${tagLabel(device)} went silent with your ${device.leftWith.title}`,
+        detail: "It stopped within seconds of your device, which a tag rarely does by chance. It may have left with you. Check your bag, coat and car.",
+      });
+      continue;
+    }
+
+    // It works at a single place, because it needs no trip, only your own movement.
+    if (device.twinOf && couldBeTracker(device)) {
+      findings.push({
+        id: `twin-${device.id}`,
+        // Someone you know's tag in your bag is worth a word. An unknown one needs you.
+        severity: device.owner ? "note" : "medium",
+        deviceId: device.id,
+        deviceCode: device.code,
+        placeIds,
+        confidence: device.identityConfidence,
+        observed: device.identityConfidence >= 1,
+        title: `${tagLabel(device)} moving with your ${device.twinOf.title}`,
+        detail: `Its signal has matched your ${device.twinOf.title} for ${device.twinOf.minutes} minutes, so it's on you or right beside it. Check your bag, coat and car.`,
+      });
+      continue;
+    }
 
     if (device.watched) {
       const base = {
@@ -92,10 +139,10 @@ export function deriveFindings(devices: DeviceView[]): Finding[] {
       observed,
     };
     const tracker = device.class === "tag";
-    const label = device.findMy === "separated" ? "Separated Find My device" : "Possible tracker tag";
-    const how = observed
-      ? "Same broadcast identity each time."
-      : `Identity inferred across ${device.aliasCount} rotating aliases.`;
+    const label = tagLabel(device);
+    const how =
+      (observed ? "Same broadcast identity each time." : `Identity inferred across ${device.aliasCount} rotating aliases.`) +
+      trips(device);
 
     if (tracker && placeIds.length >= 2) {
       findings.push({

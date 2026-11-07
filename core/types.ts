@@ -1,6 +1,7 @@
 // The palantiny ontology, as the console sees it.
 //
 //   Person  -OWNS->      Device      only ever set by you, or by a paired device
+//   Person  -NEAR->      Mac         read from their devices, see core/person.ts
 //   Device  -HAS_ALIAS-> Alias       one rotating Bluetooth identity
 //   Device  -SEEN_AT->   Place       observed through Sightings
 //   Network -SEEN_AT->   Place       Wi-Fi networks are what define a Place
@@ -63,6 +64,8 @@ export interface DeviceView {
   classLabel: string;
   vendor: string | null;
   findMy: FindMyState;
+  /** Type bits of its Find My status byte. 1 means AirTag-like. Null if never captured. */
+  findMyType: number | null;
   /** Null in screenshot mode. */
   name: string | null;
   hasName: boolean;
@@ -77,6 +80,12 @@ export interface DeviceView {
   watchedAt: number | null;
   /** Set while a watched device has just come back from a long absence. */
   back: { after: number; at: number } | null;
+  /** Trips between places it made with this Mac. Null until it's been heard at two places. */
+  cameAlong: { trips: number; of: number } | null;
+  /** One of your devices whose signal this one is matching. See core/twins.ts. */
+  twinOf: { deviceId: number; title: string; minutes: number } | null;
+  /** One of your devices it fell silent with, to the second. See core/together.ts. */
+  leftWith: { deviceId: number; title: string; at: number } | null;
   paired: boolean;
   firstSeen: number;
   lastSeen: number;
@@ -125,6 +134,99 @@ export interface PersonView {
   publicLabel: string | null;
 }
 
+/**
+ * What a tagged person's devices say right now. All of it is relative to this Mac.
+ * in-range  heard just now
+ * quiet     not heard, but no longer than this device usually goes quiet
+ * gone      silent for far longer than it usually is
+ * unknown   silence here means nothing, so no call is made
+ */
+export type PresenceState = "in-range" | "quiet" | "gone" | "unknown";
+
+/**
+ * Where this person could be recognised.
+ * anywhere  a device they carry keeps an identity, so it works at any place
+ * local     only rotating devices, so a break in the signal loses them
+ * none      nothing they carry is tagged
+ */
+export type PersonReach = "anywhere" | "local" | "none";
+
+export interface DeviceReading {
+  deviceId: number;
+  code: string;
+  title: string;
+  state: PresenceState;
+  /** Whether it goes where they go. A TV says nothing about its owner. */
+  carried: boolean;
+  /** Minutes this Mac was listening since it was last heard. */
+  silent: number;
+  /** Silence past this many listening minutes counts as gone. Null without enough history. */
+  quietLimit: number | null;
+}
+
+export interface PersonPresence {
+  code: string;
+  /** Their public name in screenshot mode. Anyone without one is left out entirely. */
+  label: string;
+  state: PresenceState;
+  reach: PersonReach;
+  statement: string;
+  lastHeard: number | null;
+  /** Every place one of their carried devices was heard for a few minutes. */
+  placeIds: number[];
+  devices: DeviceReading[];
+}
+
+/**
+ * What a stranger listening nearby can do with one of your devices.
+ * recognisable  it keeps an identity, so anyone can pick it out again
+ * rotating      it changes identity, so a stranger loses it
+ * unverified    paired with this Mac, which holds its key, so this Mac can't see what strangers see
+ */
+export type Visibility = "recognisable" | "rotating" | "unverified";
+
+export interface ExposureItem {
+  deviceId: number;
+  code: string;
+  title: string;
+  visibility: Visibility;
+  reason: string;
+  /** Share of this Mac's listening minutes it was heard in. */
+  heardShare: number;
+  /** Minutes between bursts, if a usually steady computer has dropped to bursts. */
+  sleepPulse: number | null;
+}
+
+/** What the air around you gives away, as worked out from your own devices. */
+export interface Exposure {
+  statement: string;
+  recognisable: number;
+  unverified: number;
+  rotating: number;
+  items: ExposureItem[];
+  /** Your devices heard under rotating identities, which can be matched back to them. */
+  echoes: { title: string; identities: number; addressChanges: number }[];
+  /**
+   * The routine a stranger could log from your most heard recognisable device: share of
+   * listening minutes heard in each hour of the day, null where this Mac wasn't listening.
+   */
+  routine: { deviceId: number; hours: (number | null)[] } | null;
+}
+
+/** What's on the air this minute, counted so that rotation can't inflate it. */
+export interface AirNow {
+  /** Find My addresses live now, which is about one per device. */
+  findMy: number;
+  airTagLike: { nearOwner: number; separated: number };
+}
+
+/** A device whose signal just jumped. `rise` is null if it wasn't heard before. */
+export interface Closer {
+  deviceId: number;
+  rise: number | null;
+  rssi: number;
+}
+
 export interface Snapshot {
   generatedAt: number;
   reveal: boolean;
@@ -137,6 +239,12 @@ export interface Snapshot {
   networks: NetworkView[];
   findings: Finding[];
   visits: Visit[];
+  presence: PersonPresence[];
+  exposure: Exposure;
+  air: AirNow;
+  closer: Closer[];
+  /** Set for a few minutes after the Mac itself moves. See core/moved.ts. */
+  moved: { shift: number; anchors: number } | null;
   totals: {
     devices: number;
     aliases: number;

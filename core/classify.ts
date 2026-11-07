@@ -64,6 +64,8 @@ export interface AdvertFacts {
   findMy: FindMyState;
   /** Hex key material of a separated Find My device. Hash it before storing. */
   findMyKey: string | null;
+  /** The type bits of a Find My status byte. 0 Apple device, 1 AirTag, 2 accessory, 3 AirPods. */
+  findMyType: number | null;
   class: DeviceClass;
   /** Coarse shape of the advert, used to judge whether two aliases could be one device. */
   signature: string;
@@ -102,6 +104,9 @@ export function parseAppleMessages(payload: number[]): AppleMessage[] {
 // Near its owner it sends a 2-byte short form.
 const FIND_MY_TYPE = 0x12;
 const FIND_MY_LONG_FORM = 25;
+// Bits 4 and 5, as decoded by AirGuard. Its own AirPods filter also decodes to 1, so 1 means
+// "probably an AirTag", not certainly one.
+const FIND_MY_TYPE_MASK = 0x30;
 
 export function parseAdvert(input: AdvertInput): AdvertFacts {
   const bytes = input.mfr ? hexToBytes(input.mfr) : [];
@@ -110,6 +115,7 @@ export function parseAdvert(input: AdvertInput): AdvertFacts {
   let vendor = company === null ? null : (COMPANIES[company] ?? null);
   let findMy: FindMyState = null;
   let findMyKey: string | null = null;
+  let findMyType: number | null = null;
   const appleTypes: number[] = [];
 
   if (company === 0x004c) {
@@ -118,6 +124,7 @@ export function parseAdvert(input: AdvertInput): AdvertFacts {
       const mapped = APPLE_TYPE_CLASS[message.type];
       if (mapped) classes.add(mapped);
       if (message.type !== FIND_MY_TYPE) continue;
+      if (message.data.length > 0) findMyType = (message.data[0]! & FIND_MY_TYPE_MASK) >> 4;
       if (message.data.length >= FIND_MY_LONG_FORM) {
         findMy = "separated";
         findMyKey = message.data
@@ -145,9 +152,10 @@ export function parseAdvert(input: AdvertInput): AdvertFacts {
     company === null ? "none" : company.toString(16),
     types.map((type) => type.toString(16)).join("."),
     [...services].sort().join("."),
+    ...(findMyType === null ? [] : [`t${findMyType}`]),
   ].join("|");
 
-  return { company, vendor, appleTypes: types, findMy, findMyKey, class: resolved, signature };
+  return { company, vendor, appleTypes: types, findMy, findMyKey, findMyType, class: resolved, signature };
 }
 
 export function classLabel(deviceClass: DeviceClass, findMy: FindMyState): string {
