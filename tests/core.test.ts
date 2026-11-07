@@ -48,6 +48,24 @@ describe("advert parsing", () => {
   });
 });
 
+describe("Find My status byte", () => {
+  test("reads the type bits from both forms, ignoring battery bits", () => {
+    expect(parseAdvert({ mfr: "4c0012021001" }).findMyType).toBe(1);
+    expect(parseAdvert({ mfr: "4c001202d001" }).findMyType).toBe(1);
+    expect(parseAdvert({ mfr: "4c0012020001" }).findMyType).toBe(0);
+    expect(parseAdvert({ mfr: LONG }).findMyType).toBe(1);
+  });
+
+  test("keeps an AirTag from chaining to an Apple device", () => {
+    expect(parseAdvert({ mfr: "4c0012021001" }).signature).not.toBe(parseAdvert({ mfr: "4c0012020001" }).signature);
+  });
+
+  test("leaves other adverts as they were", () => {
+    expect(parseAdvert({ mfr: "4c0010020100" }).signature).toBe("4c|10|");
+    expect(parseAdvert({ mfr: "4c0010020100" }).findMyType).toBeNull();
+  });
+});
+
 describe("places", () => {
   const home = { id: 1, networks: new Set(["a", "b", "c", "d"]) };
 
@@ -91,6 +109,16 @@ describe("alias linking", () => {
   const old = (over: Partial<AliasFacts> = {}) =>
     alias({ id: "old", deviceId: 1, firstSeen: 0, lastSeen: 95_000, ...over });
 
+  test("won't hand over from something that holds its address", () => {
+    expect(inferLink(alias({}), [old({ firm: true })])).toBeNull();
+    const hours = 3 * 3_600_000;
+    expect(inferLink(alias({ firstSeen: hours, lastSeen: hours + 60_000 }), [old({ lastSeen: hours - 5_000 })])).toBeNull();
+  });
+
+  test("still treats a firm alias as a rival, so doubt means no link", () => {
+    expect(inferLink(alias({}), [old(), old({ id: "old2", deviceId: 3, firm: true })])).toBeNull();
+  });
+
   test("links a clean handover and records evidence", () => {
     const link = inferLink(alias({}), [old()]);
     expect(link?.deviceId).toBe(1);
@@ -130,6 +158,7 @@ describe("findings", () => {
     classLabel: "Phone, tablet or computer",
     vendor: "Apple",
     findMy: null,
+    findMyType: null,
     name: null,
     hasName: false,
     label: null,
@@ -139,6 +168,9 @@ describe("findings", () => {
     watched: false,
     watchedAt: null,
     back: null,
+    cameAlong: null,
+    twinOf: null,
+    leftWith: null,
     paired: false,
     firstSeen: 0,
     lastSeen: 0,

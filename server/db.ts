@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS aliases (
 );
 CREATE INDEX IF NOT EXISTS aliases_device ON aliases(device_id);
 CREATE INDEX IF NOT EXISTS aliases_recent ON aliases(last_seen);
+CREATE INDEX IF NOT EXISTS aliases_predecessor ON aliases(predecessor_id);
 
 CREATE TABLE IF NOT EXISTS sightings (
   alias_id TEXT NOT NULL REFERENCES aliases(id),
@@ -66,6 +67,16 @@ CREATE TABLE IF NOT EXISTS sightings (
   PRIMARY KEY (alias_id, place_id, minute)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS sightings_minute ON sightings(minute);
+
+CREATE TABLE IF NOT EXISTS silences (
+  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  from_ts INTEGER NOT NULL,
+  to_ts INTEGER NOT NULL,
+  first_seen INTEGER,
+  mean_rssi REAL,
+  adverts INTEGER,
+  PRIMARY KEY (device_id, from_ts)
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY,
@@ -95,13 +106,25 @@ CREATE TABLE IF NOT EXISTS action_log (
 `;
 
 /** Columns added after the first release, so existing databases keep working. */
-function migrate(db: Database): void {
+export function migrate(db: Database): void {
   const columns = db.query("PRAGMA table_info(devices)").all() as { name: string }[];
   if (!columns.some((column) => column.name === "label")) {
     db.run("ALTER TABLE devices ADD COLUMN label TEXT");
   }
   if (!columns.some((column) => column.name === "watched_at")) {
     db.run("ALTER TABLE devices ADD COLUMN watched_at INTEGER");
+  }
+  const aliasColumns = db.query("PRAGMA table_info(aliases)").all() as { name: string }[];
+  if (!aliasColumns.some((column) => column.name === "find_my_type")) {
+    db.run("ALTER TABLE aliases ADD COLUMN find_my_type INTEGER");
+    // Before this column the type only lived at the end of the advert signature.
+    db.run("UPDATE aliases SET find_my_type = CAST(substr(signature, -1) AS INTEGER) WHERE signature GLOB '*|t[0-9]'");
+  }
+  const silenceColumns = db.query("PRAGMA table_info(silences)").all() as { name: string }[];
+  if (!silenceColumns.some((column) => column.name === "mean_rssi")) {
+    db.run("ALTER TABLE silences ADD COLUMN first_seen INTEGER");
+    db.run("ALTER TABLE silences ADD COLUMN mean_rssi REAL");
+    db.run("ALTER TABLE silences ADD COLUMN adverts INTEGER");
   }
   const personColumns = db.query("PRAGMA table_info(people)").all() as { name: string }[];
   if (!personColumns.some((column) => column.name === "public_label")) {

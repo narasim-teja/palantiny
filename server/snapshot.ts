@@ -1,11 +1,19 @@
 import type { Database } from "bun:sqlite";
+import { isAirTagLike, readAir } from "@core/air";
 import { callsign } from "@core/callsign";
 import { classLabel } from "@core/classify";
+import { BASELINE_MINUTES, RECENT_MINUTES, whatGotCloser, type DeviceMinute } from "@core/closer";
 import { getMeta } from "./db";
+import { readExposure } from "@core/exposure";
 import { deriveFindings } from "@core/findings";
+import { tripsOf, tripsTogether, type Heard } from "@core/moves";
+import { readPeople } from "@core/person";
+import { MOVED_BASELINE_MINUTES, MOVED_RECENT_MINUTES, readMoved } from "@core/moved";
 import { lastReturn } from "@core/presence";
 import { isDistinctiveName, recognise } from "@core/recognise";
 import { matches } from "@core/search";
+import { leftTogether, LEFT_MAX_WINDOW_MS, LEFT_MIN_ADVERTS, LEFT_NEAR_RSSI, SILENCE_MIN_MS, type Ended, type Left, type Silence } from "@core/together";
+import { findTwins, TWIN_WINDOW_MINUTES, type Twin } from "@core/twins";
 import type {
   DeviceClass,
   DeviceDetail,
@@ -22,12 +30,15 @@ import type {
 } from "@core/types";
 
 const LIVE_WINDOW_MS = 90_000;
+// Tighter than "in range", so a rotation counts one device twice for as short a time as possible.
+const AIR_WINDOW_MS = 60_000;
 const STALE_AFTER_MS = 20_000;
 const OFFLINE_AFTER_MS = 120_000;
 const VISIT_GAP_MINUTES = 10;
 const MAX_DEVICES = 160;
 const MAX_NETWORKS = 60;
 const MAX_SEARCH_RESULTS = 200;
+const LEFT_LOOKBACK_MS = 24 * 3_600_000;
 // A single address held this long has stopped being a rotation that hasn't happened yet.
 const STABLE_AFTER_MS = 2 * 3_600_000;
 
@@ -131,23 +142,161 @@ function readVisits(db: Database): Visit[] {
   return visits;
 }
 
-/** Only watched devices need this, so the cost stays tiny however much data there is. */
+function readListening(db: Database): number[] {
+  return (db.query("SELECT DISTINCT minute FROM sightings ORDER BY minute").all() as { minute: number }[]).map(
+    (row) => row.minute,
+  );
+}
+
+/** Per device, so only ask for the few that need it and the cost stays tiny however much data there is. */
+function readHistory(db: Database, deviceIds: number[]): Map<number, Heard[]> {
+  const query = db.query(
+    `SELECT DISTINCT s.place_id AS placeId, s.minute FROM sightings s JOIN aliases a ON a.id = s.alias_id
+     WHERE a.device_id = ? ORDER BY s.minute`,
+  );
+  return new Map(deviceIds.map((id) => [id, query.all(id) as Heard[]]));
+}
+
+const minutesOf = (heard: Heard[]) => [...new Set(heard.map((entry) => entry.minute))];
+
 function readReturns(db: Database, deviceIds: number[], now: number) {
   const returns = new Map<number, DeviceView["back"]>();
   if (deviceIds.length === 0) return returns;
-  const listening = (
-    db.query("SELECT DISTINCT minute FROM sightings ORDER BY minute").all() as { minute: number }[]
-  ).map((row) => row.minute);
-  const heard = db.query(
-    `SELECT DISTINCT s.minute FROM sightings s JOIN aliases a ON a.id = s.alias_id
-     WHERE a.device_id = ? ORDER BY s.minute`,
-  );
-  for (const id of deviceIds) {
-    const minutes = (heard.all(id) as { minute: number }[]).map((row) => row.minute);
-    const back = lastReturn(minutes, listening, Math.floor(now / 60_000));
+  const listening = readListening(db);
+  for (const [id, heard] of readHistory(db, deviceIds)) {
+    const back = lastReturn(minutesOf(heard), listening, Math.floor(now / 60_000));
     if (back) returns.set(id, { after: back.after, at: back.at * 60_000 });
   }
   return returns;
+}
+
+/** Only something heard at two places can have travelled, and few devices ever are. */
+function readCameAlong(db: Database, presence: Map<number, DeviceView["presence"]>) {
+  const counts = new Map<number, DeviceView["cameAlong"]>();
+  const travelled = [...presence].filter(([, places]) => places.length >= 2).map(([id]) => id);
+  if (travelled.length === 0) return counts;
+  const trips = tripsOf(readVisits(db));
+  for (const [id, heard] of readHistory(db, travelled)) {
+    counts.set(id, { trips: tripsTogether(heard, trips), of: trips.length });
+  }
+  return counts;
+}
+
+/** SQLite takes the other column from the row holding the MAX, so this is each device's latest. */
+function readFindMyTypes(db: Database) {
+  const rows = db
+    .query(
+      `SELECT device_id AS id, find_my_type AS findMyType, MAX(last_seen) FROM aliases
+       WHERE find_my_type IS NOT NULL GROUP BY device_id`,
+    )
+    .all() as { id: number; findMyType: number }[];
+  return new Map(rows.map((row) => [row.id, row.findMyType]));
+}
+
+/** Each device's mean signal per minute. Everything that reads signal shape starts here. */
+function readSignals(db: Database, sinceMinute: number): DeviceMinute[] {
+  return db
+    .query(
+      `SELECT a.device_id AS deviceId, s.minute, SUM(s.rssi_sum) * 1.0 / SUM(s.n) AS rssi
+       FROM sightings s JOIN aliases a ON a.id = s.alias_id
+       WHERE s.minute >= ? GROUP BY a.device_id, s.minute`,
+    )
+    .all(sinceMinute) as DeviceMinute[];
+}
+
+/** Your departures from the last day: past silences, plus any that's still going on. */
+function readSilences(db: Database, ownIds: number[], now: number): Silence[] {
+  if (ownIds.length === 0) return [];
+  const since = now - LEFT_LOOKBACK_MS;
+  const ids = JSON.stringify(ownIds);
+  const past = db
+    .query(
+      `SELECT device_id AS deviceId, from_ts AS "from" FROM silences
+       WHERE from_ts >= ? AND device_id IN (SELECT value FROM json_each(?))`,
+    )
+    .all(since, ids) as Silence[];
+  const open = db
+    .query(
+      `SELECT device_id AS deviceId, MAX(last_seen) AS "from" FROM aliases
+       WHERE device_id IN (SELECT value FROM json_each(?))
+       GROUP BY device_id HAVING MAX(last_seen) BETWEEN ? AND ?`,
+    )
+    .all(ids, since, now - SILENCE_MIN_MS) as Silence[];
+  return [...past, ...open];
+}
+
+function readLeftWith(db: Database, ownIds: number[], now: number): Map<number, Left> {
+  const silences = readSilences(db, ownIds, now);
+  if (silences.length === 0) return new Map();
+  // A signal either stopped and stayed gone, or stopped and came back, which is a silence.
+  const stayedGone = db.query(
+    `SELECT device_id AS deviceId, first_seen AS firstSeen, last_seen AS lastSeen,
+            rssi_sum * 1.0 / MAX(rssi_n, 1) AS meanRssi, rssi_n AS adverts
+     FROM aliases WHERE last_seen BETWEEN ? AND ? AND rssi_n >= ? AND rssi_sum * 1.0 / MAX(rssi_n, 1) >= ?`,
+  );
+  const cameBack = db.query(
+    `SELECT device_id AS deviceId, first_seen AS firstSeen, from_ts AS lastSeen, mean_rssi AS meanRssi, adverts
+     FROM silences WHERE from_ts BETWEEN ? AND ? AND adverts >= ? AND mean_rssi >= ?`,
+  );
+  const own = new Set(ownIds);
+  const ended = silences
+    .flatMap((silence) => {
+      const near = [silence.from - LEFT_MAX_WINDOW_MS, silence.from + LEFT_MAX_WINDOW_MS, LEFT_MIN_ADVERTS, LEFT_NEAR_RSSI];
+      return [...stayedGone.all(...near), ...cameBack.all(...near)] as Ended[];
+    })
+    .filter((signal) => !own.has(signal.deviceId));
+  return new Map(leftTogether(silences, ended, new Set(readListening(db))).map((left) => [left.deviceId, left]));
+}
+
+const twinCache = new WeakMap<Database, { key: string; twins: Map<number, Twin> }>();
+
+/** Signals only change by the minute, so one reading serves every snapshot in that minute. */
+function readTwins(db: Database, ownIds: number[], now: number) {
+  const minute = Math.floor(now / 60_000);
+  const key = `${minute}:${ownIds.join()}`;
+  const cached = twinCache.get(db);
+  if (cached?.key === key) return cached.twins;
+
+  const series = new Map<number, Map<number, number>>();
+  for (const row of readSignals(db, minute - TWIN_WINDOW_MINUTES)) {
+    const device = series.get(row.deviceId) ?? new Map<number, number>();
+    device.set(row.minute, row.rssi);
+    series.set(row.deviceId, device);
+  }
+  const twins = new Map(findTwins(series, ownIds).map((twin) => [twin.deviceId, twin]));
+  twinCache.set(db, { key, twins });
+  return twins;
+}
+
+function readAirNow(db: Database, now: number) {
+  return readAir(
+    db
+      .query(
+        `SELECT a.find_my_type AS findMyType, d.find_my AS findMy FROM aliases a JOIN devices d ON d.id = a.device_id
+         WHERE a.last_seen > ?`,
+      )
+      .all(now - AIR_WINDOW_MS) as { findMyType: number | null; findMy: FindMyState }[],
+  );
+}
+
+function readMacMoved(db: Database, listening: number[]) {
+  const since = listening.at(-MOVED_RECENT_MINUTES - MOVED_BASELINE_MINUTES);
+  return since === undefined ? null : readMoved(readSignals(db, since), listening);
+}
+
+function readCloser(db: Database, mine: Set<number>, now: number) {
+  const nowMinute = Math.floor(now / 60_000);
+  const rows = readSignals(db, nowMinute - RECENT_MINUTES - BASELINE_MINUTES + 1);
+  // Your own devices move with you all day, so they'd only drown out what you're looking for.
+  return whatGotCloser(rows.filter((row) => !mine.has(row.deviceId)), nowMinute);
+}
+
+function twinFor(twin: Twin | undefined, titleOf: (id: number) => string): DeviceView["twinOf"] {
+  return twin ? { deviceId: twin.ofDeviceId, title: titleOf(twin.ofDeviceId), minutes: twin.minutes } : null;
+}
+
+function leftFor(left: Left | undefined, titleOf: (id: number) => string): DeviceView["leftWith"] {
+  return left ? { deviceId: left.ofDeviceId, title: titleOf(left.ofDeviceId), at: left.at } : null;
 }
 
 function relevance(device: DeviceView, flagged: Set<number>, now: number): number {
@@ -184,6 +333,16 @@ function readDevices(db: Database, reveal: boolean, now: number): DeviceView[] {
     rows.filter((row) => row.watched === 1).map((row) => row.id),
     now,
   );
+  const cameAlong = readCameAlong(db, presence);
+  const findMyTypes = readFindMyTypes(db);
+  const yours = rows.filter((row) => row.person_self === 1);
+  const ownIds = yours.map((row) => row.id);
+  const twins = readTwins(db, ownIds, now);
+  const leftWith = readLeftWith(db, ownIds, now);
+  const titleOf = (id: number) => {
+    const row = yours.find((candidate) => candidate.id === id);
+    return row?.label ?? recognise(row?.name ?? null)?.kind ?? classLabel(row?.class ?? "unknown", null);
+  };
 
   return rows.map((row) => {
     const self = row.person_self === 1;
@@ -191,13 +350,15 @@ function readDevices(db: Database, reveal: boolean, now: number): DeviceView[] {
     // Find My device keeps that label, because that's the more useful thing to know.
     const known = row.find_my === "separated" ? null : recognise(row.name);
     const deviceClass = known?.class ?? row.class;
+    const findMyType = findMyTypes.get(row.id) ?? null;
     return {
       id: row.id,
       code: callsign(row.id),
       class: deviceClass,
-      classLabel: known?.kind ?? classLabel(deviceClass, row.find_my),
+      classLabel: known?.kind ?? (isAirTagLike(findMyType) ? "AirTag-like device" : classLabel(deviceClass, row.find_my)),
       vendor: row.vendor,
       findMy: row.find_my,
+      findMyType,
       // Your own devices may show their name. Nobody else's does in screenshot mode.
       name: reveal ? row.name : null,
       hasName: row.name !== null,
@@ -211,6 +372,9 @@ function readDevices(db: Database, reveal: boolean, now: number): DeviceView[] {
       watched: row.watched === 1,
       watchedAt: row.watched_at,
       back: returns.get(row.id) ?? null,
+      cameAlong: cameAlong.get(row.id) ?? null,
+      twinOf: twinFor(twins.get(row.id), titleOf),
+      leftWith: leftFor(leftWith.get(row.id), titleOf),
       paired: row.paired === 1,
       firstSeen: row.first_seen,
       lastSeen: row.last_seen,
@@ -234,7 +398,14 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
   const currentPlaceId = Number(getMeta(db, "current_place") ?? 0);
   const all = readDevices(db, reveal, now);
   const findings = deriveFindings(all);
-  const flagged = new Set(findings.map((finding) => finding.deviceId));
+  // Your phone's other identities are you too. Something riding along stays on the list.
+  const yours = all.filter((device) => device.owner?.self || (device.twinOf && !isAirTagLike(device.findMyType)));
+  const listening = readListening(db);
+  const moved = readMacMoved(db, listening);
+  // When the Mac moves every signal jumps, so nothing can be said about what got closer.
+  const closer = moved ? [] : readCloser(db, new Set(yours.map((device) => device.id)), now);
+  // Anything the console points at has to be in the snapshot, or it can't be opened.
+  const flagged = new Set([...findings.map((finding) => finding.deviceId), ...closer.map((entry) => entry.deviceId)]);
   const devices = [...all]
     .sort((a, b) => relevance(b, flagged, now) - relevance(a, flagged, now))
     .slice(0, MAX_DEVICES);
@@ -303,17 +474,26 @@ export function buildSnapshot(db: Database, reveal: boolean, now = Date.now()): 
 
   const count = (sql: string) => (db.query(sql).get() as { n: number }).n;
 
+  const status = readStatus(db, now);
+  const tagged = all.filter((device) => device.owner).map((device) => device.id);
+  const heard = new Map([...readHistory(db, tagged)].map(([id, entries]) => [id, minutesOf(entries)]));
+
   return {
     generatedAt: now,
     reveal,
     fixture: getMeta(db, "fixture") === "1",
-    status: readStatus(db, now),
+    status,
     people,
     places,
     devices,
     networks,
     findings,
     visits: readVisits(db),
+    presence: readPeople(all, heard, listening, status.sensor === "live"),
+    exposure: readExposure(all, heard, listening),
+    air: readAirNow(db, now),
+    closer,
+    moved,
     totals: {
       devices: all.length,
       aliases: count("SELECT COUNT(*) AS n FROM aliases"),

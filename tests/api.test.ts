@@ -28,6 +28,23 @@ describe("api", () => {
     expect(JSON.stringify(await snapshot("/v1/snapshot?reveal=1"))).toContain("Private Name");
   });
 
+  test("keeps someone with no public name out of presence on a recording", async () => {
+    const assign = (body: object) =>
+      app.request("/v1/actions", {
+        method: "POST",
+        headers: { ...LOCAL, "content-type": "application/json" },
+        body: JSON.stringify({ action: "assign", deviceId: 1, person: "Private Person", ...body }),
+      });
+    await assign({});
+    expect((await snapshot("/v1/snapshot")).presence).toEqual([]);
+    expect(JSON.stringify(await snapshot("/v1/snapshot"))).not.toContain("Private Person");
+    expect((await snapshot("/v1/snapshot?reveal=1")).presence[0]?.label).toBe("Private Person");
+    await assign({ publicLabel: "Roommate" });
+    const recording = await snapshot("/v1/snapshot");
+    expect(recording.presence[0]?.label).toBe("Roommate");
+    expect(JSON.stringify(recording)).not.toContain("Private Person");
+  });
+
   test("refuses a site that points its own domain at this machine", async () => {
     const response = await app.request("/v1/snapshot", { headers: { host: "evil.example:4117" } });
     expect(response.status).toBe(403);

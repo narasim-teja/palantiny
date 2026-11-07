@@ -76,6 +76,12 @@ const mine = db.query("SELECT device_id AS id FROM aliases WHERE id IN ('my-phon
 const self = db.query("SELECT id FROM people WHERE self = 1").get() as { id: number };
 for (const { id } of mine) db.query("UPDATE devices SET person_id = ? WHERE id = ?").run(self.id, id);
 
+// Someone you know, so the people panel has a person on it. Invented, like everything here.
+const roommate = db
+  .query("INSERT INTO people (code, label, public_label, self) VALUES ('PERSON-test', 'Test Person', 'Roommate', 0) RETURNING id")
+  .get() as { id: number };
+db.query("UPDATE devices SET person_id = ? WHERE id = (SELECT device_id FROM aliases WHERE id = 'colleague')").run(roommate.id);
+
 // A device identified by inference, so dashed links can be checked.
 const inferred = db.query("SELECT device_id AS id FROM aliases WHERE id = 'colleague'").get() as { id: number };
 db.query("UPDATE aliases SET link_confidence = 0.75, link_evidence = 'Test link' WHERE id = 'colleague'").run();

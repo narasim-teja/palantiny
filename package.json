@@ -16,6 +16,7 @@
     "server": "bun run server/index.ts",
     "sensor:build": "bash native/macos/build.sh",
     "fixture": "bun run scripts/fixture.ts",
+    "replay": "bun run scripts/replay.ts",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit"
   },

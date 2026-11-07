@@ -4,8 +4,9 @@ import { mergeClass, parseAdvert } from "@core/classify";
 import { isDistinctiveName } from "@core/recognise";
 import type { BleEvent, WifiEvent } from "@core/events";
 import { getMeta, setMeta } from "./db";
-import { inferLink, HANDOVER_WINDOW_MS, type AliasFacts } from "@core/inference";
+import { inferLink, refuted, HANDOVER_WINDOW_MS, type AliasFacts } from "@core/inference";
 import { decidePlace, placeCode, type PlaceFingerprint } from "@core/places";
+import { SILENCE_MIN_MS } from "@core/together";
 import type { DeviceClass } from "@core/types";
 
 // A distinctive name is strong evidence, but it's still a guess, so it reads as inferred.
@@ -14,6 +15,14 @@ const NAME_LINK_EVIDENCE = "Same distinctive broadcast name";
 
 const RETENTION_MS = 30 * 24 * 3_600_000;
 const BANDS: Record<number, string> = { 1: "2.4 GHz", 2: "5 GHz", 3: "6 GHz" };
+
+interface HeardAlias {
+  deviceId: number;
+  firstSeen: number;
+  lastSeen: number;
+  rssiSum: number;
+  adverts: number;
+}
 
 export class Ingest {
   private salt: string;
@@ -108,16 +117,24 @@ export class Ingest {
     const facts = parseAdvert({ mfr: event.mfr, svc: event.svc });
     const tagKey = facts.findMyKey ? this.hash(facts.findMyKey) : null;
     const known = this.db
-      .query("SELECT device_id AS deviceId FROM aliases WHERE id = ?")
-      .get(event.id) as { deviceId: number } | null;
+      .query(
+        `SELECT device_id AS deviceId, first_seen AS firstSeen, last_seen AS lastSeen, rssi_sum AS rssiSum, rssi_n AS adverts
+         FROM aliases WHERE id = ?`,
+      )
+      .get(event.id) as HeardAlias | null;
+    if (known && event.ts - known.lastSeen >= SILENCE_MIN_MS) this.recordSilence(known, event.ts);
+    const byKey = tagKey
+      ? (this.db.query("SELECT id FROM devices WHERE tag_key = ?").get(tagKey) as { id: number } | null)
+      : null;
 
     let deviceId: number;
     if (known) {
       deviceId = known.deviceId;
+      if (byKey && byKey.id !== deviceId) {
+        this.joinKeyedDevice(event.id, deviceId, byKey.id);
+        deviceId = byKey.id;
+      }
     } else {
-      const byKey = tagKey
-        ? (this.db.query("SELECT id FROM devices WHERE tag_key = ?").get(tagKey) as { id: number } | null)
-        : null;
       const distinctive = event.name ? isDistinctiveName(event.name) : false;
       const byName = !byKey && event.name
         ? (this.db
@@ -156,10 +173,11 @@ export class Ingest {
 
     this.db
       .query(
-        `UPDATE aliases SET last_seen = ?, signature = ?, rssi_sum = rssi_sum + ?, rssi_n = rssi_n + 1
+        `UPDATE aliases SET last_seen = ?, signature = ?, find_my_type = COALESCE(?, find_my_type),
+           rssi_sum = rssi_sum + ?, rssi_n = rssi_n + 1
          WHERE id = ?`,
       )
-      .run(event.ts, facts.signature, event.rssi, event.id);
+      .run(event.ts, facts.signature, facts.findMyType, event.rssi, event.id);
 
     this.db
       .query(
@@ -264,7 +282,12 @@ export class Ingest {
       paired: number;
     })[];
 
-    const facts: AliasFacts[] = rows.map((row) => ({ ...row, hasSuccessor: row.hasSuccessor === 1 }));
+    const facts: AliasFacts[] = rows.map((row) => ({
+      ...row,
+      hasSuccessor: row.hasSuccessor === 1,
+      firm: row.paired === 1 || row.tagKey !== null,
+    }));
+    const factsById = new Map(facts.map((fact) => [fact.id, fact]));
     let linked = 0;
 
     for (const [index, row] of rows.entries()) {
@@ -275,32 +298,139 @@ export class Ingest {
       const alias = facts[index]!;
       const link = inferLink(alias, facts);
       if (!link) continue;
+      const formerDevice = alias.deviceId;
 
       this.db.transaction(() => {
+        // Anything already chained after this alias comes with it, or the chain would split.
+        const tail = this.chain(link.aliasId, formerDevice);
         this.db
           .query(
-            `UPDATE aliases SET device_id = ?, predecessor_id = ?, link_confidence = ?, link_evidence = ?
+            `UPDATE aliases SET predecessor_id = ?, link_confidence = ?, link_evidence = ?
              WHERE id = ?`,
           )
-          .run(link.deviceId, link.predecessorId, link.confidence, link.evidence, link.aliasId);
+          .run(link.predecessorId, link.confidence, link.evidence, link.aliasId);
+        for (const { id } of tail) {
+          this.db.query("UPDATE aliases SET device_id = ? WHERE id = ?").run(link.deviceId, id);
+          // Later links in this pass read these, so they have to follow the chain too.
+          const moved = factsById.get(id);
+          if (moved) moved.deviceId = link.deviceId;
+        }
         const orphan = this.db
           .query("SELECT COUNT(*) AS n FROM aliases WHERE device_id = ?")
-          .get(alias.deviceId) as { n: number };
-        if (orphan.n === 0) this.db.query("DELETE FROM devices WHERE id = ?").run(alias.deviceId);
+          .get(formerDevice) as { n: number };
+        if (orphan.n === 0) this.db.query("DELETE FROM devices WHERE id = ?").run(formerDevice);
       })();
 
-      const predecessor = facts.find((candidate) => candidate.id === link.predecessorId);
+      const predecessor = factsById.get(link.predecessorId);
       if (predecessor) predecessor.hasSuccessor = true;
-      alias.deviceId = link.deviceId;
       linked += 1;
     }
     return linked;
+  }
+
+  /**
+   * Each advert overwrites the last, so a signal coming back would erase when it stopped.
+   * Everything's kept, because a tag that returned on the same address went quiet with you too.
+   */
+  private recordSilence(alias: HeardAlias, to: number): void {
+    this.db
+      .query(
+        `INSERT OR IGNORE INTO silences (device_id, from_ts, to_ts, first_seen, mean_rssi, adverts)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(alias.deviceId, alias.lastSeen, to, alias.firstSeen, alias.rssiSum / Math.max(alias.adverts, 1), alias.adverts);
+  }
+
+  /** A key is firmer than any link, so an alias showing one belongs to the device that holds it. */
+  private joinKeyedDevice(aliasId: string, fromDevice: number, toDevice: number): void {
+    this.db.transaction(() => {
+      this.db
+        .query(
+          `UPDATE aliases SET device_id = ?, predecessor_id = NULL, link_confidence = NULL, link_evidence = NULL
+           WHERE id = ?`,
+        )
+        .run(toDevice, aliasId);
+      this.db
+        .query(
+          `DELETE FROM devices WHERE id = ? AND paired = 0 AND person_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM aliases WHERE device_id = devices.id)`,
+        )
+        .run(fromDevice);
+    })();
+  }
+
+  /** An alias and everything chained after it on the same device. */
+  private chain(aliasId: string, deviceId: number): { id: string; firstSeen: number; lastSeen: number }[] {
+    return this.db
+      .query(
+        `WITH RECURSIVE tail(id) AS (
+           SELECT ? UNION SELECT a.id FROM aliases a JOIN tail t ON a.predecessor_id = t.id
+         ) SELECT a.id, a.first_seen AS firstSeen, a.last_seen AS lastSeen
+           FROM aliases a JOIN tail t ON t.id = a.id WHERE a.device_id = ?`,
+      )
+      .all(aliasId, deviceId) as { id: string; firstSeen: number; lastSeen: number }[];
+  }
+
+  /**
+   * Takes back links that later evidence disproved. Contradictions surface minutes after a
+   * link is made, so waiting longer can't prevent them. The alias and everything chained
+   * after it become a separate device, because whatever you tagged must not stay on a stranger.
+   */
+  retractLinks(): number {
+    const links = this.db
+      .query(
+        `SELECT a.id, a.first_seen AS aliasFirstSeen, p.first_seen AS firstSeen, p.last_seen AS lastSeen,
+                d.paired = 1 OR d.tag_key IS NOT NULL AS firm
+         FROM aliases a JOIN aliases p ON p.id = a.predecessor_id JOIN devices d ON d.id = p.device_id
+         ORDER BY a.first_seen`,
+      )
+      .all() as { id: string; aliasFirstSeen: number; firstSeen: number; lastSeen: number; firm: number }[];
+    const broken = links.filter((link) => refuted({ ...link, firm: link.firm === 1 }, link.aliasFirstSeen));
+    if (broken.length === 0) return 0;
+
+    const deviceOf = this.db.query("SELECT device_id AS id FROM aliases WHERE id = ?");
+    const aliasCount = this.db.query("SELECT COUNT(*) AS n FROM aliases WHERE device_id = ?");
+    const split = this.db.query(
+      `INSERT INTO devices (class, vendor, find_my, first_seen, last_seen)
+       SELECT class, vendor, find_my, ?, ? FROM devices WHERE id = ? RETURNING id`,
+    );
+    const move = this.db.query("UPDATE aliases SET device_id = ? WHERE id = ?");
+    const unlink = this.db.query(
+      "UPDATE aliases SET predecessor_id = NULL, link_confidence = NULL, link_evidence = NULL WHERE id = ?",
+    );
+    const refresh = this.db.query(
+      `UPDATE devices SET
+         first_seen = COALESCE((SELECT MIN(first_seen) FROM aliases WHERE device_id = devices.id), first_seen),
+         last_seen = COALESCE((SELECT MAX(last_seen) FROM aliases WHERE device_id = devices.id), last_seen)
+       WHERE id = ?`,
+    );
+
+    this.db.transaction(() => {
+      for (const link of broken) {
+        // Asked each time, because an earlier link in this list may have moved this alias.
+        const { id: deviceId } = deviceOf.get(link.id) as { id: number };
+        const tail = this.chain(link.id, deviceId);
+        unlink.run(link.id);
+        // A chain that's already alone on its device only needs the link removed.
+        if (tail.length === (aliasCount.get(deviceId) as { n: number }).n) continue;
+        const row = split.get(
+          Math.min(...tail.map((alias) => alias.firstSeen)),
+          Math.max(...tail.map((alias) => alias.lastSeen)),
+          deviceId,
+        ) as { id: number };
+        for (const alias of tail) move.run(row.id, alias.id);
+        refresh.run(deviceId);
+      }
+      setMeta(this.db, "links.retracted", String(Number(getMeta(this.db, "links.retracted") ?? 0) + broken.length));
+    })();
+    return broken.length;
   }
 
   /** Strangers' sightings expire. Devices you claimed, trust or watch are kept. */
   prune(now: number): void {
     const cutoff = Math.floor((now - RETENTION_MS) / 60_000);
     this.db.transaction(() => {
+      this.db.query("DELETE FROM silences WHERE from_ts < ?").run(now - RETENTION_MS);
       this.db
         .query(
           `DELETE FROM sightings WHERE minute < ? AND alias_id IN (

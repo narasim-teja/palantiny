@@ -12,6 +12,7 @@ const SOCKET = resolve(process.env.PALANTINY_SOCKET ?? "data/sensor.sock");
 const HEARTBEAT_MS = 5_000;
 const LINK_MS = 30_000;
 const PRUNE_MS = 3_600_000;
+const PAIRED_MS = 600_000;
 
 /**
  * macos    launches the bundled sensor app
@@ -39,6 +40,7 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
   }
 
   const ingest = new Ingest(db);
+  ingest.retractLinks();
   ingest.mergeByName();
   let connected = 0;
 
@@ -109,8 +111,10 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
       if (connected > 0) beat();
     }, HEARTBEAT_MS),
     setInterval(() => {
+      const retracted = ingest.retractLinks();
       const linked = ingest.linkAliases(Date.now()) + ingest.mergeByName();
       if (linked > 0) console.log(`server: linked ${linked} rotated aliases`);
+      if (retracted > 0) console.log(`server: retracted ${retracted} disproved links`);
     }, LINK_MS),
     setInterval(() => ingest.prune(Date.now()), PRUNE_MS),
   ];
@@ -118,9 +122,12 @@ export async function startSensorLink(db: Database, mode: SensorMode): Promise<(
   let stopAlerts = () => {};
   if (mode === "macos") {
     stopAlerts = startAlerts(db);
-    importPairedDevices(db, Date.now())
-      .then((count) => console.log(`server: ${count} new paired devices`))
-      .catch((error) => console.error("server: paired device import failed", error));
+    const importPaired = () =>
+      importPairedDevices(db, Date.now())
+        .then((count) => console.log(`server: ${count} new paired devices`))
+        .catch((error) => console.error("server: paired device import failed", error));
+    void importPaired();
+    timers.push(setInterval(importPaired, PAIRED_MS));
     // `open` gives the sensor its own app identity, which is what macOS grants
     // Bluetooth and Location permission to. Launching the binary directly would not.
     await Bun.spawn(["open", "-n", MAC_APP, "--args", "--socket", SOCKET]).exited;
