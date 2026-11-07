@@ -4,7 +4,7 @@ import { placeName, shortAgo } from "@/lib/view";
 const STATE: Record<PresenceState, string> = {
   "in-range": "In range",
   quiet: "Quiet",
-  gone: "Not near",
+  silent: "Not heard",
   unknown: "Can't say",
 };
 
