@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS silences (
   from_ts INTEGER NOT NULL,
   to_ts INTEGER NOT NULL,
   first_seen INTEGER,
-  mean_rssi REAL,
+  best_rssi INTEGER,
   adverts INTEGER,
   PRIMARY KEY (device_id, from_ts)
 ) WITHOUT ROWID;
@@ -121,10 +121,17 @@ export function migrate(db: Database): void {
     db.run("UPDATE aliases SET find_my_type = CAST(substr(signature, -1) AS INTEGER) WHERE signature GLOB '*|t[0-9]'");
   }
   const silenceColumns = db.query("PRAGMA table_info(silences)").all() as { name: string }[];
-  if (!silenceColumns.some((column) => column.name === "mean_rssi")) {
+  if (!silenceColumns.some((column) => column.name === "first_seen")) {
     db.run("ALTER TABLE silences ADD COLUMN first_seen INTEGER");
-    db.run("ALTER TABLE silences ADD COLUMN mean_rssi REAL");
     db.run("ALTER TABLE silences ADD COLUMN adverts INTEGER");
+  }
+  if (!silenceColumns.some((column) => column.name === "best_rssi")) {
+    db.run("ALTER TABLE silences ADD COLUMN best_rssi INTEGER");
+  }
+  if (silenceColumns.some((column) => column.name === "mean_rssi")) {
+    // The best signal wasn't kept before, and the average is the closest thing there is.
+    db.run("UPDATE silences SET best_rssi = CAST(mean_rssi AS INTEGER) WHERE best_rssi IS NULL");
+    db.run("ALTER TABLE silences DROP COLUMN mean_rssi");
   }
   const personColumns = db.query("PRAGMA table_info(people)").all() as { name: string }[];
   if (!personColumns.some((column) => column.name === "public_label")) {

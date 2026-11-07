@@ -138,10 +138,10 @@ export interface PersonView {
  * What a tagged person's devices say right now. All of it is relative to this Mac.
  * in-range  heard just now
  * quiet     not heard, but no longer than this device usually goes quiet
- * gone      silent for far longer than it usually is
+ * silent    quiet for far longer than usual. It may have left, or be off or charging
  * unknown   silence here means nothing, so no call is made
  */
-export type PresenceState = "in-range" | "quiet" | "gone" | "unknown";
+export type PresenceState = "in-range" | "quiet" | "silent" | "unknown";
 
 /**
  * Where this person could be recognised.

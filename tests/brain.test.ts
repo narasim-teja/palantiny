@@ -6,7 +6,7 @@ import { deriveFindings } from "../core/findings";
 import { tripsOf, tripsTogether } from "../core/moves";
 import { readMoved } from "../core/moved";
 import { MIN_HEARD_MINUTES, QUIET_FLOOR_MINUTES, quietLimit, readDevice, readPeople } from "../core/person";
-import { leftTogether, onTheQuarter } from "../core/together";
+import { isSteady, leftTogether, onTheQuarter } from "../core/together";
 import { findTwins, TWIN_MIN_MINUTES } from "../core/twins";
 import type { DeviceView, Visit } from "../core/types";
 import { applyAction } from "../server/actions";
@@ -68,9 +68,9 @@ describe("reading a device", () => {
     expect(readDevice(device({}), [...heard, 100_099], sleptThrough).silent).toBe(0);
   });
 
-  test("tells normal quiet from gone", () => {
+  test("tells normal quiet from a long silence", () => {
     expect(readDevice(device({}), minutes(190), listening).state).toBe("quiet");
-    expect(readDevice(device({}), minutes(100), listening).state).toBe("gone");
+    expect(readDevice(device({}), minutes(100), listening).state).toBe("silent");
   });
 
   test("a rotating device's silence proves nothing", () => {
@@ -101,11 +101,13 @@ describe("reading a person", () => {
     expect(person?.statement).toContain("not the person");
   });
 
-  test("gone needs every recognisable device to agree", () => {
+  test("silence needs every recognisable device to agree", () => {
     const [split] = read([device({ id: 1 }), device({ id: 2 })], [[1, minutes(100)], [2, minutes(195)]]);
     expect(split?.state).toBe("quiet");
     const [both] = read([device({ id: 1 }), device({ id: 2 })], [[1, minutes(100)], [2, minutes(90)]]);
-    expect(both?.state).toBe("gone");
+    expect(both?.state).toBe("silent");
+    // It can't know why. A real watch on a charger read just like this.
+    expect(both?.statement).toContain("may have left, or be off or charging");
   });
 
   test("a TV says nothing about its owner, even when it's on", () => {
@@ -555,7 +557,7 @@ describe("going silent together", () => {
     deviceId: 2,
     firstSeen: FROM - 600_000,
     lastSeen: FROM + 1_000,
-    meanRssi: -48,
+    bestRssi: -48,
     adverts: 60,
     ...over,
   });
@@ -584,8 +586,15 @@ describe("going silent together", () => {
   });
 
   test("ignores weak or barely heard signals", () => {
-    expect(leftTogether(you, [signal({ meanRssi: -80 })], listening)).toEqual([]);
+    expect(leftTogether(you, [signal({ bestRssi: -80 })], listening)).toEqual([]);
     expect(leftTogether(you, [signal({ adverts: 3 })], listening)).toEqual([]);
+  });
+
+  test("only something usually heard can say you left", () => {
+    expect(isSteady(900, 1000)).toBe(true);
+    // A WHOOP, which only broadcasts when its phone is out of reach.
+    expect(isSteady(20, 1000)).toBe(false);
+    expect(isSteady(0, 0)).toBe(false);
   });
 
   test("the Mac stopping isn't anyone leaving", () => {
@@ -607,10 +616,21 @@ describe("going silent together", () => {
     expect(deriveFindings([device({ owner: null, findMyType: 0, class: "personal", leftWith })])).toEqual([]);
   });
 
+  test("an older database keeps its silences through the change of column", () => {
+    const db = openDb(":memory:");
+    db.run("INSERT INTO devices (id, first_seen, last_seen) VALUES (1, 1, 1)");
+    db.run("ALTER TABLE silences DROP COLUMN best_rssi");
+    db.run("ALTER TABLE silences ADD COLUMN mean_rssi REAL");
+    db.run("INSERT INTO silences (device_id, from_ts, to_ts, first_seen, mean_rssi, adverts) VALUES (1, 5, 6, 1, -48.5, 60)");
+    migrate(db);
+    expect(db.query("SELECT best_rssi AS best FROM silences").get()).toEqual({ best: -48 });
+  });
+
   test("a stranger going quiet starts nothing, because only your devices are a reference", () => {
     const db = openDb(":memory:");
     db.run("INSERT INTO devices (id, first_seen, last_seen) VALUES (1, 1, 1), (2, 1, 1)");
-    db.query("INSERT INTO silences VALUES (1, ?, ?, 1, -48, 60), (2, ?, ?, 1, -48, 60)").run(FROM, FROM + 400_000, FROM, FROM + 400_000);
+    const row = "INSERT INTO silences (device_id, from_ts, to_ts, first_seen, best_rssi, adverts) VALUES (?, ?, ?, 1, -48, 60)";
+    for (const id of [1, 2]) db.query(row).run(id, FROM, FROM + 400_000);
     expect(buildSnapshot(db, false, FROM + 410_000).devices.filter((entry) => entry.leftWith)).toEqual([]);
   });
 
@@ -630,13 +650,14 @@ describe("going silent together", () => {
       ts,
       nets: [1, 2, 3].map((n) => ({ ssid: "Test", bssid: `aa:${n}`, rssi: -50, secured: true })),
     });
-    ingest.wifi(scan(FROM - 200_000));
-    ingest.wifi(scan(FROM - 199_000));
+    ingest.wifi(scan(FROM - 2_000_000));
+    ingest.wifi(scan(FROM - 1_999_000));
     const hear = (id: string, ts: number) =>
       ingest.ble({ t: "ble", ts, id, rssi: -48, mfr: id === "tag" ? "4c0012021001" : "4c0010020100" });
-    for (let index = 25; index > 0; index -= 1) {
-      hear("mine", FROM - index * 2_000);
-      hear("tag", FROM - index * 2_000 + 1_000);
+    // Your phone is usually heard, which is what lets its silence mean something.
+    for (let index = 30; index > 0; index -= 1) {
+      hear("mine", FROM - index * 60_000);
+      hear("tag", FROM - index * 60_000 + 1_000);
     }
     hear("mine", FROM);
     hear("tag", FROM + 1_000);
@@ -654,5 +675,6 @@ describe("going silent together", () => {
     ]);
     const tag = buildSnapshot(db, false, FROM + 410_000).devices.find((entry) => entry.findMyType === 1);
     expect(tag?.leftWith?.at).toBe(FROM);
+    expect((db.query("SELECT best_rssi AS best FROM silences ORDER BY from_ts").all() as { best: number }[])[0]?.best).toBe(-48);
   });
 });

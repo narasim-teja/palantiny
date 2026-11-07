@@ -16,6 +16,11 @@ const MISSED_ADVERTS = 3;
 export const SILENCE_MIN_MS = 300_000;
 export const LEFT_NEAR_RSSI = -60;
 export const LEFT_MIN_ADVERTS = 20;
+/**
+ * Only something usually heard can say you left. A WHOOP only broadcasts when its phone is out
+ * of reach, so its silence means the opposite: that the phone came back.
+ */
+const STEADY_SHARE = 0.5;
 /** Find My addresses change on the quarter hour, so signals ending then have only rotated. */
 const QUARTER_MS = 900_000;
 const ROTATION_SLACK_MS = 45_000;
@@ -31,7 +36,8 @@ export interface Ended {
   deviceId: number;
   firstSeen: number;
   lastSeen: number;
-  meanRssi: number;
+  /** Its strongest, because walking out drags the average down: a phone fades over minutes. */
+  bestRssi: number;
   adverts: number;
 }
 
@@ -39,6 +45,10 @@ export interface Left {
   deviceId: number;
   ofDeviceId: number;
   at: number;
+}
+
+export function isSteady(heardMinutes: number, listeningMinutes: number): boolean {
+  return listeningMinutes > 0 && heardMinutes / listeningMinutes >= STEADY_SHARE;
 }
 
 /** How far apart two things that stopped together can look, given how often this one is heard. */
@@ -68,7 +78,7 @@ export function leftTogether(silences: Silence[], ended: Ended[], listening: Rea
   for (const silence of usable) {
     for (const signal of ended) {
       if (signal.deviceId === silence.deviceId) continue;
-      if (signal.meanRssi < LEFT_NEAR_RSSI || signal.adverts < LEFT_MIN_ADVERTS) continue;
+      if (signal.bestRssi < LEFT_NEAR_RSSI || signal.adverts < LEFT_MIN_ADVERTS) continue;
       if (Math.abs(signal.lastSeen - silence.from) > windowFor(signal)) continue;
       left.set(signal.deviceId, { deviceId: signal.deviceId, ofDeviceId: silence.deviceId, at: silence.from });
     }

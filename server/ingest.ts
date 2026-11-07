@@ -17,10 +17,10 @@ const RETENTION_MS = 30 * 24 * 3_600_000;
 const BANDS: Record<number, string> = { 1: "2.4 GHz", 2: "5 GHz", 3: "6 GHz" };
 
 interface HeardAlias {
+  id: string;
   deviceId: number;
   firstSeen: number;
   lastSeen: number;
-  rssiSum: number;
   adverts: number;
 }
 
@@ -118,7 +118,7 @@ export class Ingest {
     const tagKey = facts.findMyKey ? this.hash(facts.findMyKey) : null;
     const known = this.db
       .query(
-        `SELECT device_id AS deviceId, first_seen AS firstSeen, last_seen AS lastSeen, rssi_sum AS rssiSum, rssi_n AS adverts
+        `SELECT id, device_id AS deviceId, first_seen AS firstSeen, last_seen AS lastSeen, rssi_n AS adverts
          FROM aliases WHERE id = ?`,
       )
       .get(event.id) as HeardAlias | null;
@@ -335,10 +335,10 @@ export class Ingest {
   private recordSilence(alias: HeardAlias, to: number): void {
     this.db
       .query(
-        `INSERT OR IGNORE INTO silences (device_id, from_ts, to_ts, first_seen, mean_rssi, adverts)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO silences (device_id, from_ts, to_ts, first_seen, best_rssi, adverts)
+         VALUES (?, ?, ?, ?, (SELECT MAX(rssi_max) FROM sightings WHERE alias_id = ?), ?)`,
       )
-      .run(alias.deviceId, alias.lastSeen, to, alias.firstSeen, alias.rssiSum / Math.max(alias.adverts, 1), alias.adverts);
+      .run(alias.deviceId, alias.lastSeen, to, alias.firstSeen, alias.id, alias.adverts);
   }
 
   /** A key is firmer than any link, so an alias showing one belongs to the device that holds it. */

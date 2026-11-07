@@ -12,7 +12,7 @@ import { MOVED_BASELINE_MINUTES, MOVED_RECENT_MINUTES, readMoved } from "@core/m
 import { lastReturn } from "@core/presence";
 import { isDistinctiveName, recognise } from "@core/recognise";
 import { matches } from "@core/search";
-import { leftTogether, LEFT_MAX_WINDOW_MS, LEFT_MIN_ADVERTS, LEFT_NEAR_RSSI, SILENCE_MIN_MS, type Ended, type Left, type Silence } from "@core/together";
+import { isSteady, leftTogether, LEFT_MAX_WINDOW_MS, LEFT_MIN_ADVERTS, LEFT_NEAR_RSSI, SILENCE_MIN_MS, type Ended, type Left, type Silence } from "@core/together";
 import { findTwins, TWIN_WINDOW_MINUTES, type Twin } from "@core/twins";
 import type {
   DeviceClass,
@@ -225,18 +225,26 @@ function readSilences(db: Database, ownIds: number[], now: number): Silence[] {
   return [...past, ...open];
 }
 
-function readLeftWith(db: Database, ownIds: number[], now: number): Map<number, Left> {
-  const silences = readSilences(db, ownIds, now);
+function readLeftWith(
+  db: Database,
+  ownIds: number[],
+  presence: Map<number, DeviceView["presence"]>,
+  now: number,
+): Map<number, Left> {
+  const listening = readListening(db);
+  const heardMinutes = (id: number) => (presence.get(id) ?? []).reduce((sum, place) => sum + place.minutes, 0);
+  const steady = ownIds.filter((id) => isSteady(heardMinutes(id), listening.length));
+  const silences = readSilences(db, steady, now);
   if (silences.length === 0) return new Map();
   // A signal either stopped and stayed gone, or stopped and came back, which is a silence.
   const stayedGone = db.query(
-    `SELECT device_id AS deviceId, first_seen AS firstSeen, last_seen AS lastSeen,
-            rssi_sum * 1.0 / MAX(rssi_n, 1) AS meanRssi, rssi_n AS adverts
-     FROM aliases WHERE last_seen BETWEEN ? AND ? AND rssi_n >= ? AND rssi_sum * 1.0 / MAX(rssi_n, 1) >= ?`,
+    `SELECT a.device_id AS deviceId, a.first_seen AS firstSeen, a.last_seen AS lastSeen, a.rssi_n AS adverts,
+            (SELECT MAX(s.rssi_max) FROM sightings s WHERE s.alias_id = a.id) AS bestRssi
+     FROM aliases a WHERE a.last_seen BETWEEN ? AND ? AND a.rssi_n >= ? AND bestRssi >= ?`,
   );
   const cameBack = db.query(
-    `SELECT device_id AS deviceId, first_seen AS firstSeen, from_ts AS lastSeen, mean_rssi AS meanRssi, adverts
-     FROM silences WHERE from_ts BETWEEN ? AND ? AND adverts >= ? AND mean_rssi >= ?`,
+    `SELECT device_id AS deviceId, first_seen AS firstSeen, from_ts AS lastSeen, best_rssi AS bestRssi, adverts
+     FROM silences WHERE from_ts BETWEEN ? AND ? AND adverts >= ? AND best_rssi >= ?`,
   );
   const own = new Set(ownIds);
   const ended = silences
@@ -245,7 +253,7 @@ function readLeftWith(db: Database, ownIds: number[], now: number): Map<number, 
       return [...stayedGone.all(...near), ...cameBack.all(...near)] as Ended[];
     })
     .filter((signal) => !own.has(signal.deviceId));
-  return new Map(leftTogether(silences, ended, new Set(readListening(db))).map((left) => [left.deviceId, left]));
+  return new Map(leftTogether(silences, ended, new Set(listening)).map((left) => [left.deviceId, left]));
 }
 
 const twinCache = new WeakMap<Database, { key: string; twins: Map<number, Twin> }>();
@@ -338,7 +346,7 @@ function readDevices(db: Database, reveal: boolean, now: number): DeviceView[] {
   const yours = rows.filter((row) => row.person_self === 1);
   const ownIds = yours.map((row) => row.id);
   const twins = readTwins(db, ownIds, now);
-  const leftWith = readLeftWith(db, ownIds, now);
+  const leftWith = readLeftWith(db, ownIds, presence, now);
   const titleOf = (id: number) => {
     const row = yours.find((candidate) => candidate.id === id);
     return row?.label ?? recognise(row?.name ?? null)?.kind ?? classLabel(row?.class ?? "unknown", null);

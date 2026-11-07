@@ -48,8 +48,8 @@ export function readDevice(device: DeviceView, heardMinutes: number[], listening
   let state: PresenceState = "unknown";
   if (device.live) state = "in-range";
   else if (carried && limit !== null && silent < limit) state = "quiet";
-  // A rotating device may be right here under a new address, so its silence proves nothing.
-  else if (carried && limit !== null && recognisable(device)) state = "gone";
+  // A rotating device may be right here under a new address, so its silence means nothing.
+  else if (carried && limit !== null && recognisable(device)) state = "silent";
 
   return {
     deviceId: device.id,
@@ -87,9 +87,10 @@ function statementFor(state: PresenceState, readings: DeviceReading[], reach: Pe
     const closest = readings.filter((reading) => reading.state === "quiet").sort((a, b) => a.silent - b.silent)[0]!;
     return `Quiet for ${span(closest.silent)}, which is normal for ${closest.title}.`;
   }
-  if (state === "gone") {
-    const latest = readings.filter((reading) => reading.state === "gone").sort((a, b) => a.silent - b.silent)[0]!;
-    return `Not heard for ${span(latest.silent)} of listening, so ${latest.title} isn't near this Mac.`;
+  if (state === "silent") {
+    const latest = readings.filter((reading) => reading.state === "silent").sort((a, b) => a.silent - b.silent)[0]!;
+    // A watch on its charger looked exactly like this, with its owner at home.
+    return `Not heard for ${span(latest.silent)} of listening. ${latest.title} may have left, or be off or charging.`;
   }
   return reach === "local"
     ? "Their devices rotate, so silence can't tell gone from a new address."
@@ -99,7 +100,7 @@ function statementFor(state: PresenceState, readings: DeviceReading[], reach: Pe
 /** The strongest thing any carried device can support. */
 function overall(readings: DeviceReading[]): PresenceState {
   const carried = readings.filter((reading) => reading.carried);
-  for (const state of ["in-range", "quiet", "gone"] as const) {
+  for (const state of ["in-range", "quiet", "silent"] as const) {
     if (carried.some((reading) => reading.state === state)) return state;
   }
   return "unknown";
@@ -121,7 +122,7 @@ export function readPeople(
     byPerson.set(device.owner.code, [...(byPerson.get(device.owner.code) ?? []), device]);
   }
 
-  const rank: Record<PresenceState, number> = { "in-range": 0, quiet: 1, gone: 2, unknown: 3 };
+  const rank: Record<PresenceState, number> = { "in-range": 0, quiet: 1, silent: 2, unknown: 3 };
   return [...byPerson]
     .map(([code, owned]): PersonPresence => {
       const readings = owned.map((device) => readDevice(device, heard.get(device.id) ?? [], listeningMinutes));
