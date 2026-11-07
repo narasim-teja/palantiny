@@ -1,11 +1,14 @@
 import { AnimatePresence, MotionConfig } from "motion/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Arrivals } from "./Arrivals";
+import { CloserList } from "./CloserList";
 import { DeviceTable } from "./DeviceTable";
+import { Exposure } from "./Exposure";
 import { Known } from "./Known";
 import { Findings } from "./Findings";
 import { Inspector } from "./Inspector";
 import { FilmCaption, GraphKey, Ledger } from "./Overlays";
+import { People } from "./People";
 import { Places } from "./Places";
 import { Setup } from "./Setup";
 import { Timeline } from "./Timeline";
@@ -141,6 +144,7 @@ export function Console() {
               {here && !offline && ` at ${here.label ?? here.code}`}
             </span>
             {snapshot && !offline && <span className="in-range"><span className="data">{inRange}</span> in range</span>}
+            {snapshot?.moved && !offline && <span className="in-range">This Mac just moved</span>}
           </div>
           <div className="topbar-end">
             {snapshot?.fixture && <span className="flag">Test data, not real sightings</span>}
@@ -173,9 +177,19 @@ export function Console() {
         <nav className="left" aria-label="Findings and places">
           {snapshot ? (
             <>
+              <CloserList closer={snapshot.closer} devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} />
               {urgent && findings}
+              <People
+                presence={snapshot.presence}
+                devices={snapshot.devices}
+                places={snapshot.places}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                now={snapshot.generatedAt}
+              />
               <Known devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} now={snapshot.generatedAt} />
               {!urgent && findings}
+              <Exposure exposure={snapshot.exposure} air={snapshot.air} selectedId={selectedId} onSelect={setSelectedId} />
               <Places places={snapshot.places} inRange={inRange} now={snapshot.generatedAt} onRename={rename} />
               <Arrivals devices={snapshot.devices} selectedId={selectedId} onSelect={setSelectedId} now={snapshot.generatedAt} />
             </>

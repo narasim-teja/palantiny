@@ -16,7 +16,8 @@ interface Props {
 function identityLine(device: DeviceView): string {
   if (device.paired) return "Paired with this Mac";
   if (device.findMy === "separated") return "Broadcast key";
-  if (device.identityConfidence < 1) return `Inferred, ${Math.round(device.identityConfidence * 100)}% confidence`;
+  // No percentage: on real data these rule scores didn't predict which links held up.
+  if (device.identityConfidence < 1) return `Inferred across ${device.aliasCount} aliases`;
   return "Observed";
 }
 
@@ -344,6 +345,18 @@ function DeviceObject({ snapshot, device, finding, detail, onAction }: Props & {
               <dd>{device.code}</dd>
             </>
           )}
+          {device.twinOf && (
+            <>
+              <dt>Moves with</dt>
+              <dd>Your {device.twinOf.title}, {device.twinOf.minutes} minutes</dd>
+            </>
+          )}
+          {device.leftWith && (
+            <>
+              <dt>Left with</dt>
+              <dd>Your {device.leftWith.title}, {ago(device.leftWith.at, snapshot.generatedAt)}</dd>
+            </>
+          )}
           <dt>Vendor</dt>
           <dd>{device.vendor ?? "Not broadcast"}</dd>
           <dt>Broadcast name</dt>
@@ -388,7 +401,7 @@ function DeviceObject({ snapshot, device, finding, detail, onAction }: Props & {
               <li className="alias-row" key={alias.code}>
                 <div className="alias-top">
                   <span className="data">{alias.code}</span>
-                  <span className="quiet">{alias.confidence === null ? "Observed" : `${Math.round(alias.confidence * 100)}% link`}</span>
+                  <span className="quiet">{alias.confidence === null ? "Observed" : "Inferred link"}</span>
                 </div>
                 {alias.evidence && <p className="evidence">{alias.evidence}</p>}
               </li>

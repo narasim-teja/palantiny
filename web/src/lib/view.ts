@@ -42,6 +42,16 @@ export const STABILITY: Record<DeviceView["stability"], { word: string; detail: 
   new: { word: "New", detail: "Too new to tell whether it rotates", followable: false },
 };
 
+/** The hour of the day a device is heard most, or null if it never was. */
+export function busiestHour(hours: (number | null)[]): { hour: string; share: number } | null {
+  let best = -1;
+  hours.forEach((share, hour) => {
+    if (share !== null && share > 0 && (best < 0 || share > hours[best]!)) best = hour;
+  });
+  if (best < 0) return null;
+  return { hour: `${String(best).padStart(2, "0")}:00`, share: Math.round(hours[best]! * 100) };
+}
+
 export function ago(from: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - from) / 1000));
   if (seconds < 60) return "just now";
