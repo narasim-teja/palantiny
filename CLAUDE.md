@@ -58,7 +58,7 @@ Measure before you build. Try an idea on recorded data first, and record what fa
 
 **No routines for other people.** Person presence answers "is this near the Mac now?". Schedules and patterns are only ever worked out for you (`core/exposure.ts`).
 
-**Say what the evidence supports.** A rotating device's silence is "can't say", never "gone". A paired device's stability is the Mac's view, not a stranger's, because the Mac holds its key. Rule scores on links aren't accuracies, so don't show them as percentages.
+**Say what the evidence supports.** A rotating device's silence is "can't say", and any silence only means not heard, never gone: a watch on its charger looks the same as one that left. A paired device's stability is the Mac's view, not a stranger's, because the Mac holds its key. Rule scores on links aren't accuracies, so don't show them as percentages.
 
 **Control for the Mac itself.** It sleeps, and everything goes quiet with it, so any two signals look correlated. Compare only minutes it was properly listening. A 0.61 correlation fell to 0.00 this way.
 

@@ -111,13 +111,13 @@ You hear devices, but you want to know about people, so `core/person.ts` reads o
 |---|---|
 | **In range** | One of their carried devices was heard just now. That places the device, not the person |
 | **Quiet** | Not heard, but for no longer than this device usually goes quiet |
-| **Not near** | Silent for far longer than usual, on every device that can show it |
+| **Not heard** | Silent for far longer than usual, on every device that can show it. It may have left, or be off or charging |
 | **Can't say** | The silence means nothing, so no call is made |
 
 Three rules do most of the work:
 
 - **Only carried devices count.** A TV says nothing about its owner.
-- **Only a lasting identity can prove absence.** A rotating device may be right here under a new address, so its silence is "can't say", never "not near".
+- **Only a lasting identity can prove absence.** A rotating device may be right here under a new address, so its silence is "can't say", never "not heard".
 - **Silence is judged per device.** It has to pass `max(20, 3 × the device's 99th percentile gap)` in minutes the Mac was listening, after at least 20 minutes of history. Replayed on real data, this called a device gone about 5 times where a flat 20 minutes called it about 30, though that's a small sample and a real short trip out looks the same as a flicker.
 
 Each person also has a **reach**, which is the honest answer to "would you know them at a cafe?". It's "anywhere" if they carry a Stable or Named device, and "local" if everything they carry rotates, because then one break in the signal loses them.
@@ -146,7 +146,11 @@ When you leave, whatever you're carrying stops at the same moment. `core/togethe
 
 "Same time" depends on the signal. Find My adverts reach the Mac about every 11 seconds, so "last heard" is only that sharp: in one Faraday bag test, a single iPhone's two identities ended 9 seconds apart, and a tag beside it 21 seconds apart. So each signal gets a window of three of its own advert gaps, up to 30 seconds. Any strong signal ends that close by chance about 11% of the time, and a tag far less often, on a small sample, which is why only tags raise a finding.
 
-It ignores weak signals, moments when the Mac stopped listening, and anything on the quarter hour, because most Find My addresses change then: 103 of 187 started within 30 seconds of one. It's only been tried with a bag, where signals cut off at once. Walking out the door fades them instead, and that's untested.
+It ignores signals that were never strong, moments when the Mac stopped listening, and anything on the quarter hour, because most Find My addresses change then: 103 of 187 started within 30 seconds of one. Strength means a signal's best moment, because leaving drags the average down, and only a device that's usually heard can start the comparison.
+
+That rule comes from a WHOOP. It only broadcast while its phone was out of reach: it started about 12 seconds after a phone went into a Faraday bag, and stopped within 18 seconds of it coming out. So its silence means the phone came back, and its broadcasts show when the phone is away.
+
+It caught a tag live with a bag, where signals cut off at once. A real departure fades over minutes, and that's still unproven with a tag.
 
 ## Knowing the Mac moved
 
@@ -277,7 +281,7 @@ One apartment, one MacBook, about 37 hours, with the lid closed overnight.
 
 - Following detection across two real places. So far that view has only run on labelled test data.
 - Whether the alias links still held are correct. Retraction removes the ones that are disproved, but the rest aren't confirmed.
-- Whether "not near" is right. Nothing has compared it with where someone really was.
+- What "not heard" means for a person. In the one real check, a watch fell silent because it was charging, so silence says nothing about where its owner is.
 - Whether paired devices look different to a stranger.
 - How long a separated key lasts in practice. The draft spec says 24 hours, and we saw none past about 15, but coverage had gaps and a device can simply leave.
 
